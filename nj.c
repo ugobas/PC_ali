@@ -10,6 +10,7 @@ struct node{
 
 void Copy_sons(struct node *mnode, struct node *node1, struct node *node2);
 void Copy_name(struct node *mnode, struct node *node1, struct node *node2);
+char *Copy_name_3(struct node *node1, struct node *node2, struct node *node3);
 
 #include "protein.h"
 #include "nj_align.h"
@@ -82,7 +83,8 @@ int NJ_align(int **msa, int *N_ali_max,
   }
 
   float **score; if(AV_LINK){score=div;}else{score=Q;}
-  struct node *mnode; int mum=n; // new parent node
+  struct node *mnode;  int mum=n; // new parent node
+  char *umnode=NULL;  // unrooted
   for(int nclus=n; nclus>1; nclus--){
     // Look for minimum of Q
     int amin=-1, lamin, bmin, lbmin;
@@ -124,7 +126,7 @@ int NJ_align(int **msa, int *N_ali_max,
 			     mnode->son2->sons, mnode->son2->nson);
     }
 
-    // Outliers
+    // Outgroup
     Dsum[mum]=0;
     for(a=0; a<nclus; a++){
       if(a==amin || a==bmin)continue;
@@ -140,6 +142,18 @@ int NJ_align(int **msa, int *N_ali_max,
       div[mum][la]=div[la][mum];
       Dsum[la]+=(div[la][mum]-d);
       Dsum[mum]+=div[la][mum];
+    }
+    if(nclus==3){
+      // unrooted tree
+      int lc=-1;
+      for(a=0; a<nclus; a++){
+	int la=label[a];
+	if(la != lamin && la != lbmin){lc=la; break;}
+      }
+      if(lc>=0){
+	nodes[lc].branch=div[mum][lc];
+	umnode=Copy_name_3(mnode->son1, mnode->son2, nodes+lc);
+      } 
     }
 
     // update the Q matrix
@@ -168,10 +182,21 @@ int NJ_align(int **msa, int *N_ali_max,
 
   // Write the tree in Newick format
   char nametree[100]; sprintf(nametree, "%s.tree", name_out);
-  printf("Writing tree in Newick format in %s\n", nametree);
+  printf("Writing rooted tree in Newick format in %s\n", nametree);
   FILE *file_out=fopen(nametree, "w");
   fprintf(file_out, "%s\n", mnode->name);
   fclose(file_out);
+    // Write the unrooted tree
+  if(umnode){
+    sprintf(nametree, "%s.unroot.tree", name_out);
+    printf("Writing unrooted tree in Newick format in %s\n", nametree);
+    file_out=fopen(nametree, "w");
+    fprintf(file_out, "%s\n", umnode);
+    fclose(file_out);
+    free(umnode);
+  }else{
+    printf("WARNING, unrooted tree was not found\n");
+  }
 
   for(a=0; a<n_nodes; a++){
     free(div[a]); if(AV_LINK==0)free(Q[a]);
@@ -198,4 +223,17 @@ void Copy_name(struct node *mnode, struct node *node1, struct node *node2)
     malloc((strlen(node1->name)+strlen(node2->name)+30)*sizeof(char));
   sprintf(mnode->name, "(%s:%.3g,%s:%.3g)",
 	  node1->name, node1->branch, node2->name, node2->branch);
+}
+
+char *Copy_name_3(struct node *node1, struct node *node2, struct node *node3)
+{
+  char *name=malloc(sizeof(char)*
+		    (strlen(node1->name)+
+		     strlen(node2->name)+
+		     strlen(node3->name)+30));
+  sprintf(name, "(%s:%.3g,%s:%.3g,%s:%.3g)",
+	  node1->name, node1->branch,
+	  node2->name, node2->branch,
+	  node3->name, node3->branch);
+  return(name);
 }

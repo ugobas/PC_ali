@@ -20,7 +20,7 @@ int nali_min=16; // Minimal number of aligned residues
 int nfail_max=3; // Max number of decrease of TM score
 
 float Compute_TM_mult(double *tm_k, float **TM_all, float **xca,
-		      int **msa, int nprot, int n, float d02, int ltar);
+		      int **msa, int nprot, int n, float d02, int *len);
 int Superimpose_mult(float *w, float **xca, int *len, int *mprot,
 		     int i_ref, int **msa, int nprot, int n);
 void Add_coord(float *xsum, int *sum, int nn, float *xca_i, int *msa_i,
@@ -125,6 +125,10 @@ float TM_score(float **d2, float *d02, float **Rot_out, float *Shift_out,
     for(i=0; i<3; i++)free(rot[i]);
     //Empty_matrix_f(rot, 3);
   }
+  if(TM_max>ltar){
+    printf("ERROR, TM score = %.1f/%.1f > 1\n", TM_max,ltar);
+    exit(8);
+  }
 
   return(TM_max/ltar);
 }
@@ -151,7 +155,7 @@ float TM_score_mult(float **TM_all, int **msa, int N_ali, int nprot,
 
   // Set parameters of TM score
   if(lmin <= L_offset)return(-1);
-  float d02=TM_coeff*pow(lmin-L_offset, 1./3)-TM_offset;
+  float d02=TM_coeff*pow(lmin-L_offset, 1./3)-TM_offset; //lmin
   if(d02 <= 0)return(-1);
   d02*=d02;
 
@@ -198,7 +202,7 @@ float TM_score_mult(float **TM_all, int **msa, int N_ali, int nprot,
 	    }
 	}
 
-	TM=Compute_TM_mult(tm_k, NULL, xca, msa, nprot, n, d02, lmin);
+	TM=Compute_TM_mult(tm_k, NULL, xca, msa, nprot, n, d02, len);
 	//printf("TM: nali=%d %.1f nfail=%d\n", align, TM/lmin, nfail);
 
 	if(TM>TM_max_tmp){
@@ -231,7 +235,7 @@ float TM_score_mult(float **TM_all, int **msa, int N_ali, int nprot,
     printf("ERROR, multiple superimposition did not work\n");
     TM=-1;
   }else{
-    TM=Compute_TM_mult(tm_k, TM_all, xca, msa, nprot, n, d02, lmin);
+    TM=Compute_TM_mult(tm_k, TM_all, xca, msa, nprot, n, d02, len);
     for(i=0; i<nprot; i++)Copy_coord(prot_p[i]->xca_rot, xca[i], ncart[i]);
   }
   for(i=0; i<nprot; i++)free(xca[i]);
@@ -240,7 +244,7 @@ float TM_score_mult(float **TM_all, int **msa, int N_ali, int nprot,
 }
 
 float Compute_TM_mult(double *tm_k, float **TM_all, float **xca,
-		      int **msa, int nprot, int n, float d02, int ltar)
+		      int **msa, int nprot, int n, float d02, int *len)
 {
   int k; for(k=0; k<n; k++){tm_k[k]=0;}
   for(int i=0; i<nprot; i++){
@@ -255,13 +259,17 @@ float Compute_TM_mult(double *tm_k, float **TM_all, float **xca,
 	float tm=1./(1+dd/d02);
 	tm_k[k]+=tm; if(TM_all)TM_ij+=tm;
       }
-      if(TM_all)TM_all[i][j]=TM_ij/ltar;
+      if(TM_all){
+	int ltar;
+	if(len[i]<len[j]){ltar=len[i];}else{ltar=len[j];}
+	TM_all[i][j]=TM_ij/ltar;
+      }
     }
   }
   double TM=0;
   for(k=0; k<n; k++){TM+=tm_k[k];}
   if(isnan(TM)){
-    printf("ERROR, TM is nan l=%d d0=%.2g\ntm_k= ", ltar, d02);
+    printf("ERROR, TM is nan d0=%.2g\ntm_k= ", d02);
     for(k=0; k<n; k++)printf(" %.3g", tm_k[k]);
     printf("\n"); //exit(8);
   }

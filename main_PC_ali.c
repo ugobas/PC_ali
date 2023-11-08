@@ -20,7 +20,7 @@
    -ali <MSA file in FASTA format, with names of PDB files>
    # The pdb code is optionally followed by the chain index
    # Ex: >1opd.pdb A or >1opdA or >1opd_A
-   -pbdir <directory of pdb files>  (default: current directory)
+   -pbdir <path of pdb files>  (default: current folder)
    -pdbext <extension of pdb files>  (default: none)
 
    OUTPUT: MSA (.msa), NJ tree (.tree), structural similarity scores (.sim)
@@ -51,6 +51,7 @@
 #include <string.h>
 #include <math.h>
 
+int DIV_ALIGNED=0; // Use aligned fraction score for computing divergence?
 int PRINT_CV=0;   // Print clock violations?
 int PRINT_PDB=0;  // Print structures?
 int PRINT_ID=1;  // Print statistics of conserved residues?
@@ -62,9 +63,9 @@ int ALI_TM=0;     // Modify Input alignment targetting TM?
 int ALI_PC=1;     // Modify Input alignment targetting PC?
 int PC_NW=1;      // Align PC with NW instead of closest neighbors 
 int ITMAX=3;     // Rounds of optimization of target similarity scores
-int NMSA=8;     // How many MSA are constructed
+int NMSA=7;     // How many MSA are constructed
 int NMSA_act;
-#define NTYPE 16     // >=6+NMSA;
+#define NTYPE 16     // > 6+NMSA;
 int AV_LINK=1;   // Make tree with average linkage (1) of neighbor joining (0)
 int CLIQUE_SS=0; // Correct cliques with secondary structure? Not good...
 int INP_MSA=0;   // Sequences input as MSA?
@@ -76,7 +77,7 @@ int PRINT_GAP=0; // Examine relationship between Triangle Inequality and gaps?
 int PRINT_SIM_ALL=0; // Print similarity for all conformations?
 int ALL_PAIRS=0; // write all pairwise alis or only j<i?
 
-float S0=0.06;    // for Tajima-Nei divergence
+float S0=0.05;    // for Tajima-Nei divergence
 float TM0=0.167; //  TM score of unrelated proteins
 
 //float alpha=0.7; // Exponent for computing clock violations
@@ -157,8 +158,8 @@ double // aligned:
 double c_ave; // Mean number of contacts per residue
 
 //double PC_load[4]={0.83,0.80,0.94,0.95}; // ali, SI, TM, CO
-double PC_load[4]={0.80,0.80,0.95,0.95};
-double PC0_1, PC_norm;
+double PC_load[4]={0.80,0.85,0.95,0.95};
+double PC0_1, PC_norm, PC_norm_div;
 char *ali_name[NTYPE];
 int opt_PC[NTYPE], Diff_opt[NTYPE];
 int npair_pdb=0, npair_seq=0;
@@ -202,7 +203,7 @@ int Find_prot(char *name, struct Prot_input *Prot, int *index, int N);
 float **Read_function(char *file_fun, struct Prot_input *Prot,
 		      int *index, int N);
 void Sec_str_AA_propensity(struct protein *pi, struct protein *pj,
-			   int *ali, int nali, float PC);
+			   int *ali, int nali, float DP);
 void Print_propensities(char *nameout);
 double ***Prop_secstr=NULL, ***Prop_AA=NULL, *DP_bin=NULL, *DP_norm=NULL;
 char *SS_name[4], AA_name[22];
@@ -534,8 +535,10 @@ int main(int argc, char **argv)
   }
 
   // PC0
-  PC0_1=PC_load[0]*0.5+PC_load[1]*S0+PC_load[2]*TM0;
-  PC_norm=PC_load[0]+PC_load[1]+PC_load[2]+PC_load[3];
+  PC0_1=PC_load[1]*S0+PC_load[2]*TM0;
+  PC_norm=PC_load[1]+PC_load[2]+PC_load[3];
+  PC_norm_div=PC_load[1]+PC_load[2]+PC_load[3];
+  if(DIV_ALIGNED){PC0_1+=PC_load[0]*0.5; PC_norm_div+=PC_load[0];}
   // PC value for random pairs
 
   // Store PCA alignments
@@ -1007,13 +1010,15 @@ int main(int argc, char **argv)
 			  Comp_TM, TMs, proti, protj,
 			  norm_c, norm_ali, it, last);
 	  PC_sum+=PC[it];
-	  if(last){ // Propensity of sec.str.
-	    Sec_str_AA_propensity(proti, protj,ali_ij,nali[it],PC[it]);
-	  }
 	  double qinf=0; int homo;
 	  Compute_Dcont(&qinf,CO[it],proti->len,protj->len,&homo,NORM);
-	  double PC0=(PC0_1+PC_load[3]*qinf)/PC_norm;
-	  PC_Div[i][j]=Divergence(PC[it], PC0, DMAX);
+	  double PC0=(PC0_1+PC_load[3]*qinf)/PC_norm_div, PC_a;
+	  if(DIV_ALIGNED){PC_a = PC[it];}
+	  else{PC_a = (PC[it]*PC_norm-PC_load[0]*nali[it])/PC_norm_div;}
+	  PC_Div[i][j]=Divergence(PC_a, PC0, DMAX);
+	  if(last){ // Propensity of sec.str.
+	    Sec_str_AA_propensity(proti, protj,ali_ij,nali[it],PC_Div[i][j]);
+	  }
 	}
       } // end pairs
       if(it_opt<0 || PC_sum > PC_opt){
@@ -1047,7 +1052,7 @@ int main(int argc, char **argv)
     Write_ss_ali(msa_opt, prot_p,N_seq, L_msa_opt, name_in, "PCAli");
     if(PRINT_PDB)Print_pdb(name_in, prot_p, N_seq);
     for(i=0; i<N_seq; i++) 
-      for(j=0; j<i; j++)PC_Div[j][i]=PC_Div[i][j]; // Symmetrize
+      for(j=0; j<i; j++)PC_Div_opt[j][i]=PC_Div_opt[i][j]; // Symmetrize
     NJ_align(NULL, &N_ali_max, NULL, NULL, NULL,
 	     prot_p, name_PC, PC_Div_opt, N_seq, 1); // NJ tree
    
@@ -1060,7 +1065,7 @@ int main(int argc, char **argv)
     //Empty_matrix_f(PC_Div_opt, N_seq);
 
     {
-      char name_out[100]; sprintf(name_out, "%s_summary.dat", name_in);
+      char name_out[100]; sprintf(name_out, "%s.summary.dat", name_in);
       printf("Writing summary scores in %s\n", name_out);
       FILE *file_out=fopen(name_out, "w");
       char out[2000]="";
@@ -1165,7 +1170,7 @@ int main(int argc, char **argv)
 	if(it==0){if(INP_MSA){a=0; c2=i; c1=j;}else{continue;}}
 	else{
 	  if(ci>cj){c2=ci; c1=cj;}else{c2=cj; c1=ci;}
-	  if(ALL_TYPES){a=it_opt;}else{a=1;}
+	  if(ALL_TYPES){a=PTYPE;}else{a=1;} //a=it_opt;
 	}
 	if(file_sim){
 	  fprintf(file_sim, "\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f",
@@ -1179,8 +1184,12 @@ int main(int argc, char **argv)
 	  DT=Divergence(TM_all[a][c2][c1], TM0, DMAX),
 	  DC=Compute_Dcont(&qinf,CO_all[a][c2][c1],
 			   pi->len,pj->len, &homo,NORM);
-	double PC0=(PC0_1+PC_load[3]*qinf)/PC_norm;
-	double DP=Divergence(PC_all[a][c2][c1], PC0, DMAX);
+	double PC0=(PC0_1+PC_load[3]*qinf)/PC_norm_div;
+	double PC_a=PC_all[a][c2][c1];
+	if(DIV_ALIGNED==0){
+	  PC_a=(PC_a*PC_norm-PC_load[0]*na_all[a][c2][c1])/PC_norm_div;
+	}
+	double DP=Divergence(PC_a, PC0, DMAX);
 	if(file_div){
 	  fprintf(file_div, "\t%.3f\t%.3f\t%.3f\t%.3f", DS, DC, DT, DP);
 	}
@@ -1190,7 +1199,8 @@ int main(int argc, char **argv)
 	  TN_Div[i][j]=DS;
 	  TM_Div[i][j]=DT;
 	  PC_Div[i][j]=DP;
-	  Seq_Id[j][i]=Seq_Id[i][j]; // Symmetrize
+	  // Symmetrize
+	  Seq_Id[j][i]=Seq_Id[i][j];
 	  Cont_Div[j][i]=DC;
 	  TN_Div[j][i]=DS;
 	  TM_Div[j][i]=DT;
@@ -1280,8 +1290,12 @@ int main(int argc, char **argv)
 	  Compute_Dcont(&qinf,CO_all[it_opt][i][j],pi->len,pj->len,&homo,NORM);
 	TN_Div_PDB[i][j]=Divergence(SI_all[it_opt][i][j], S0, DMAX);
 	TM_Div_PDB[i][j]=Divergence(TM_all[it_opt][i][j], TM0, DMAX);
-	double PC0=(PC0_1+PC_load[3]*qinf)/PC_norm;
-	PC_Div_PDB[i][j]=Divergence(PC_all[it_opt][i][j], PC0, DMAX);
+	double PC0=(PC0_1+PC_load[3]*qinf)/PC_norm_div;
+	double PC_a = PC_all[it_opt][i][j];
+	if(DIV_ALIGNED==0){
+	  PC_a = (PC_a*PC_norm-PC_load[0]*na_all[it_opt][i][j])/PC_norm_div;
+	}
+	PC_Div_PDB[i][j]=Divergence(PC_a, PC0, DMAX);
       }
     }
   }
@@ -2943,7 +2957,7 @@ float Ave_se(double *se, double sum1, double sum2, int n, float nind){
 
 
 void Sec_str_AA_propensity(struct protein *pi, struct protein *pj,
-			   int *ali, int nali, float PC)
+			   int *ali, int nali, float DP)
 {
   int ns=4, na=22, gap=3, gap2=21, nbin=5, nmax=nbin-1;
   float lbin=0.25;
@@ -2966,9 +2980,6 @@ void Sec_str_AA_propensity(struct protein *pi, struct protein *pj,
     AA_name[20]='-'; AA_name[21]='X'; 
   }
 
-  double qinf=Compute_qinf(pi->len,pj->len,NORM);
-  double PC0=(PC0_1+PC_load[3]*qinf)/PC_norm;
-  double DP=Divergence(PC, PC0, DMAX);
   int bin=DP/lbin; if(bin>nmax)bin=nmax;
   DP_bin[bin]+=DP; DP_norm[bin]++;
   double **Prop_bin=Prop_secstr[bin];

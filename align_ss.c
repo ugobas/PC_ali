@@ -65,7 +65,7 @@ void Write_ali_prot(int **msa, struct protein **prots,
 void Write_ss_ali(int **ali, struct protein **prot_p, int N_pdb, int N_ali,
 		  char *name, char *what)
 {
-  char f_ali_ss[100]; sprintf(f_ali_ss,"%s_%s_ss.msa",name,what);
+  char f_ali_ss[100]; sprintf(f_ali_ss,"%s.%s_ss.msa",name,what);
   printf("Writing secondary structure MSA in %s\n", f_ali_ss);
   FILE *f_ali=fopen(f_ali_ss,"w");
   for(int i=0; i<N_pdb; i++){
