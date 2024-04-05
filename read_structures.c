@@ -39,11 +39,27 @@ char FILE_CM[NCHAR], FILE_SEQ[NCHAR];
              READING STRUCTURES
 ************************************************************/
 int Read_PDB_compress(struct protein **prot,
-		      char *Prot_name, char *chain, char *PDB_PATH)
+		      char *pdbid, char *chain,
+		      char *PDB_PATH, char *PDB_EXT)
 {
-  int L; char filename[200];
-  sprintf(filename,"%s%s", PDB_PATH, Prot_name);
-  strcpy((*prot)->name_file, Prot_name);
+  int L; char filename[200], name[100];
+  sprintf(name, "%s%s", pdbid, PDB_EXT);
+  sprintf(filename,"%s%s", PDB_PATH, name);
+  FILE *file_in=fopen(filename, "r");
+  if(file_in==NULL){
+    sprintf(name, "%s%s%s", pdbid, chain, PDB_EXT);
+    sprintf(filename,"%s%s", PDB_PATH, name);
+    file_in=fopen(filename, "r");
+    if(file_in==NULL){
+      printf("WARNING, neither %s nor %s%s%s exist\n",
+	     filename, PDB_PATH, pdbid, PDB_EXT);
+      return(0);
+    }
+  }
+  if(file_in)fclose(file_in);
+  //printf("Reading %s\n", filename);
+
+  strcpy((*prot)->name_file, pdbid);
   if(Get_compression(filename)==0){
     //printf("Reading pdb: %s chain %c in uncompressed format into %x\n",
     //	   filename, *chain, *prot);

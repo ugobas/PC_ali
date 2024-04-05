@@ -88,6 +88,10 @@ void Clique_MSA(int **msa, int *L_msa,      // output
 		char *name_in,
 		int L_msa_ini)   // Length of the input MSA
 {
+  printf("Making initial cliques.\nLen_prot: ");
+  for(int j=0; j<Nprot; j++)printf(" %d", Lprot[j]);
+  printf("\n");
+
   Ltot=Set_sites(&Prot_site, &Res_site, &Site_prot, Lprot, Nprot);
   nprot=Nprot; len_prot=Lprot; // global variables
 

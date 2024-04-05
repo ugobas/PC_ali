@@ -20,7 +20,8 @@ void Shared_contacts_noali(int **nc,
 void Align_CO(int *ali_CO, int *ali, int **nc,
 	      short **Cont_map1, int n1,
 	      short **Cont_map2, int n2);
-float Seqid(int *ali_12, int *ali_aa, char *seq1, int N1, char *seq2, int N2);
+float Seqid(int *diff, int *ali_12, int *ali_aa,
+	    char *seq1, int N1, char *seq2, int N2);
 char Get_compression(char *file_name);
 int Find_name(char *name, char **names, int N, int Np);
 int Change_ext(char *name_out, char *name_in, char *ext);

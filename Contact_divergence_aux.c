@@ -521,11 +521,11 @@ int Pair_ali(int *ali, int N_ali, int *ali1, int *ali2)
   return(nali);
 }
 
-float Seqid(int *ali_12, int *id_aa,
+float Seqid(int *diff, int *ali_12, int *id_aa,
 	    char *seq1, int N1,
 	    char *seq2, int N2)
 {
-  int id=0, nali=0;
+  int id=0, nali=0; (*diff)=0;
   if(id_aa)for(int i1=0; i1<N1; i1++)id_aa[i1]=0;
   for(int i1=0; i1<N1; i1++){
     int i2=ali_12[i1];
@@ -535,6 +535,7 @@ float Seqid(int *ali_12, int *id_aa,
       }
       nali++;
       if(seq1[i1]==seq2[i2]){id++; if(id_aa)id_aa[i1]=1;}
+      else{(*diff)++;}
     }
   }
 

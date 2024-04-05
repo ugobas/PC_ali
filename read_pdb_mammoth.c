@@ -145,23 +145,24 @@ int Read_pdb(char *filename, struct protein **prot, char *chain_to_read)
     }
 
     // New residue ?
-  if(strncmp(res_label,res_old,5)!=0){
-      // Write old residue
-      if(nres>=0)res_i->n_atom=n_atom;
-      // Write new residue
-      nres++; res_i++;
+    if(strncmp(res_label,res_old,5)!=0){
+      if(n_atom>0){
+	// Write old residue
+	res_i->n_atom=n_atom;
+	// Write new residue
+	nres++; res_i++;
+      }
+      if(nres >= MAXRES){
+	printf("ERROR, too many residues (more than %d)\n", MAXRES);
+	exit(8);
+      }
+      n_atom=0;
       if(res_i->atom==NULL)
 	res_i->atom=malloc(MAXATOM*sizeof(struct atom));
-      n_atom=0;
       res_i->aa=Get_aaname(string+17);
       strcpy(res_i->label, res_label);
       // Store
       strcpy(res_old, res_label);
-    }
-
-    if(nres >= MAXRES){
-      printf("ERROR, too many residues (more than %d)\n", MAXRES);
-      exit(8);
     }
 
     // Write atom
@@ -194,7 +195,9 @@ int Read_pdb(char *filename, struct protein **prot, char *chain_to_read)
 		      (*prot)->pdbres, sec_ele, N_sec_ele);
   //printf("%d secondary structure elements found\n", N_sec_ele);
 
-  for(int i=0; i<nres; i++)if(res[i].atom)free(res[i].atom);
+  for(int i=0; i<nres; i++){
+    if(res[i].atom)free(res[i].atom); res[i].atom=NULL;
+  }
 
   return(nres);
 }
@@ -313,7 +316,9 @@ void Set_prot_name(char *name, char *filename, char chain){
     tmp[i]=*ptr; ptr++; i++;
   }
   // Add chain label
-  if(i<CHARPDB){if(chain!=' '){tmp[i]=chain;}else{tmp[i]='_';} i++;}
+  if(chain != tmp[4]){
+    if(i<CHARPDB){if(chain!=' '){tmp[i]=chain;}else{tmp[i]='_';} i++;}
+  }
   tmp[i]='\0';
   //printf("%d characters in name\n", i);
   if(i>=CHARPDB){printf("WARNING, too many characters in prot name\n");}
@@ -396,8 +401,10 @@ int Secondary_structure(short *ss3, int N_res, char chain, char **pdbres,
       i_res++;
     }
   }
-  for(i_res=0; i_res<N_res; i_res++)printf("%c",SS_code[ss3[i_res]]);
-  printf("\n");
+  if(N_sec_ele){
+    for(i_res=0; i_res<N_res; i_res++)printf("%c",SS_code[ss3[i_res]]);
+    printf("\n");
+  }
   //exit(8);
   return(N_sec_ele);
 }

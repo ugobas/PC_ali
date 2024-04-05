@@ -125,6 +125,8 @@ int Single_linkage(int ***elements, int **n_ele, int **clus,
     }
   }
 
+  printf("%d elements joined into %d clusters with threshold %.2g\n",
+	   n, n_clus, thr);
   return(n_clus);
 }
 

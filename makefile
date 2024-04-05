@@ -23,10 +23,15 @@ FC=f77
 
 FFLAG=-g -ffixed-line-length-132
 
-#For debugging
+#For debugging:
 #CFLAGS= -g -std=c99 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE_SOURCE
-#For production
+LDFLAGS=-lm
+#CFLAGS= -g -std=c99 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE_SOURCE -fsanitize=undefined
+#LDFLAGS=-lm -fsanitize=undefined
+#For production:
 CFLAGS= -g -std=c99 -O2 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE_SOURCE
+#LDFLAGS=-lm 
+
 #UNAME_S := $(shell uname -s)
 #ARCH := $(shell arch)
 # macos
@@ -41,7 +46,6 @@ CFLAGS= -g -std=c99 -O2 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE_SOURCE
 #endif
 #For debugging & profilling
 # CFLAGS= -Wall -std=c99 -pedantic -g -pg -fbounds-check -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE_SOURCE
-LDFLAGS=-lm 
 #LDFLAGS=-lm -L/usr/lib64/libg2c.so.0.0.0
 
 
