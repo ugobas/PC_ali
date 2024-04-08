@@ -10,18 +10,27 @@ PC_ali performs hybrid multiple structure and sequence alignments based on the s
 rity scores and divergence scores and neighbor-joining phylogenetic tree obtained with the hybrid evolutionary divergence measure based on PC_sim, and it outputs a pd
 b file with multiply superimposed structures. Optionally, it computes violations of the molecular clock for each pair of proteins.
 
-PC_ali takes as input either not aligned sequences (option -seq) or an MSA (option -ali). PDB file names must be specified as sequence names.
+PC_ali takes as input:
+1) either a list of PDB files (option -pdblist, format: column1 filename col2 chain col3 directory 1 or 2 where the file is stored), or
+2) not aligned sequences (option -seq), or
+3) an MSA (option -ali).
+In cases 2 and 3 PDB file names must be specified as sequence names.
+In case 1, the PDB files may be stored in two different folders. Folder 1 is input as -pdbdir, folder 2 is input as -pdbdir2, the folder of each PDB file (1 or 2) is specified in the 3rd column of the pdblist file (optional), default is folder 1. 
+It is not allowed to input both a list of PDB files and an MSA.
 
 Usage:
-PC_ali   -seq <sequences in FASTA format, with names of PDB files>
-	 -ali <MSA file in FASTA format, with names of PDB files>
+PC_ali   -pdblist <List of PDB files> Format: 1 file_name 2 chain 3 dir 
+        -seq <sequences in FASTA format, with names of PDB files>
+	-ali <MSA file in FASTA format, with names of PDB files>
 	# The pdb code is optionally followed by the chain index
 	# Ex: >1opd.pdb A or >1opdA or >1opd_A
 
-	 -pbdir <directory of pdb files>  (default: current directory)
-	 -pdbext <extension of pdb files>  (default: none)
+	 -pbdir <folder of pdb files>  (default: current directory)
+         -pbdir2 <2nd folder of pdb files>  (default: current directory)
+	 -pdbext <extension of pdb files>  (default: .pdb)
 #### Optional parameters:
 	 -out <Name of output files> (default: alignment file)
+  	 -clique     ! Initial alignment is based on cliques (may be slow)
 	 -ali_tm     ! Perform pairwise alignments that target TM score
 	 -ali_co     ! Perform pairwise alignments that target Contact Overlap
 	 -ali_ss     ! Perform alignments that target sec.structure
