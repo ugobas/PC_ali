@@ -872,7 +872,6 @@ void Write_msa(int **msa, struct clique *First_clique,
   if(error){printf("Exiting\n"); exit(8);}
 }
 
-
 void Print_MSA(int **msa_new, char *name_msa, int Nprot, int L_msa,
 	       int *Lprot, char **Seq, char **name_seq)
 {
@@ -892,6 +891,7 @@ void Print_MSA(int **msa_new, char *name_msa, int Nprot, int L_msa,
   }
   fclose(file_out);
 }
+
 void Print_clique(struct clique *clique){
   printf("%2d  ", clique->n);
   for(int j=0; j<nprot; j++){

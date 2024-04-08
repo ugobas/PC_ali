@@ -204,6 +204,7 @@ int Get_sequences(struct Prot_input **Prot_input, int *Nali, char *file_ali,
 int Get_pdb_list(struct Prot_input **Prot_input, char *input);
 int *Match_alignments(struct Prot_input *Prot1,
 		      struct Prot_input *Prot2, int N);
+int Remove_gap_cols(int **msa, int N_seq, int L_msa);
 int Find_prot(char *name, struct Prot_input *Prot, int *index, int N);
 float **Read_function(char *file_fun, struct Prot_input *Prot,
 		      int *index, int N);
@@ -990,6 +991,7 @@ int main(int argc, char **argv)
 	  L_msa=NJ_align(msa, &N_ali_max, Ali_pair_seq, NULL, NULL,
 			 prot_p, name_PC, PC_Div, N_seq, AV_LINK);
 	}
+	L_msa=Remove_gap_cols(msa, N_seq, L_msa);
       }
 
       // Score alignment
@@ -1065,7 +1067,6 @@ int main(int argc, char **argv)
     if(d2)Empty_matrix_f(d2, L_msa);
     Empty_matrix_f(Seq_diff, N_pdb);
 
-    
     // Print optimal MSA
     printf("Initial MSA length: %d Optimal: %d\n", N_ali, L_msa_opt);
     Print_MSA(msa_opt, name_msa,N_seq,L_msa_opt, len_seq, Seq, name_seq);
@@ -1610,9 +1611,9 @@ void help(char *pname){
 	 ">cp PC_ali ~/bin/ (or whatever path directory you like)\n"
 	 "\n"
 	 "RUN:\n"
-	 "PC_ali -pdblist <list of PDB> "
-	 "-pdbdir <path to PDB files> -pdbdir2 <second path>"
-	 "-seq <sequence file> \n\n"
+	 "PC_ali -pdblist <list of PDB>"
+	 " -pdbdir <path to PDB files> -pdbdir2 <second path>"
+	 " -seq <sequence file> -pdbext .pdb\n\n"
 	 "EXAMPLE: PC_ali -seq 50044_Mammoth.aln -pdbdir <PDBPATH>\n"
 	 "(all PDB files named in 50044_Mammoth.aln must be in <PDBPATH>)\n\n");
 
@@ -1633,7 +1634,7 @@ void help(char *pname){
 	 "\t# Ex: >1opd.pdb A or >1opdA or >1opd_A\n\n"
 	 "\t -pdbdir <directory of pdb files>  (default: current directory)\n"
 	 "\t -pdbdir2 <2nd directory of pdb files>  (default: current)\n"
-	 "\t -pdbext <extension of pdb files>  (default: none)\n"
+	 "\t -pdbext <extension of pdb files>  (default: .pdb)\n"
 	 "#### Optional parameters:\n"
 	 "\t -out <Name of output files> (default: alignment file)\n"
 	 "\t -clique ! Initial alignment is based on cliques\n"
@@ -1649,6 +1650,24 @@ void help(char *pname){
 	 "\t -print_cv     ! Print clock violations\n"
 	 "\t -func <file with function similarity for pairs of proteins>\n\n");
   exit(8);
+}
+
+int Remove_gap_cols(int **msa, int N_seq, int L_msa){
+  int L_ali=0, jcol[L_msa], i, j;
+  for(j=0; j<L_msa; j++){
+    int keep=0;
+    for(i=0; i<N_seq; i++){if(msa[i][j]>=0){keep=1; break;}}
+    if(keep){jcol[j]=L_ali; L_ali++;}
+    else{jcol[j]=-1;}
+  }
+  if(L_ali!=L_msa){
+    for(j=0; j<L_msa; j++){
+      int k=jcol[j]; if(k<0 || k==j){continue;}
+      // Copy column j at place k
+      for(i=0; i<N_seq; i++){msa[i][k]=msa[i][j];}
+    }
+  }
+  return(L_ali);
 }
 
 float Mean_freq(double *se, double *relerr2, double sum, double tot){
@@ -1828,9 +1847,9 @@ int Get_pdb_list(struct Prot_input **Prot_input, char *input)
     }else{
       (*Prot_input)[n].chain=' ';
     }
-    if(arg<3)dir=0;
+    if(arg<3){dir=0;}else{dir--;}
     if(dir!=0 && dir !=1){
-      printf("ERROR reading %s, the folder can be either 0 or 1\n"
+      printf("ERROR reading %s, the folder can be either 1 or 2\n"
 	     "Just read: %s", input, string); exit(8);
     }else if(dir==1 && PDB_DIR2[0]=='\0'){
       printf("ERROR reading %s, folder is 1 but PDB_DIR2 not given (%s)\n",
