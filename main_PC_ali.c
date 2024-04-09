@@ -3475,12 +3475,15 @@ void Score_alignment(float *nali, float *SI, float *TM, float *CO,
       }
     }
 
-    Test_contacts(ali_ij, id_sup[it], c_ave,
-		  ali_cont_ct[it],  id_cont_ct[it],
-		  ali_cont_sup[it], id_cont_sup[it],
-		  ali_cont_aaid[it],id_cont_aaid[it],
-		  proti->Cont_map, proti->aseq, proti->ncont, proti->len,
-		  protj->Cont_map, protj->aseq, protj->ncont, protj->len);
+    if(PRINT_ID){
+      Test_contacts(ali_ij, id_sup[it], c_ave,
+		    ali_cont_ct[it],  id_cont_ct[it],
+		    ali_cont_sup[it], id_cont_sup[it],
+		    ali_cont_aaid[it],id_cont_aaid[it],
+		    proti->Cont_map, proti->aseq, proti->ncont, proti->len,
+		    protj->Cont_map, protj->aseq, protj->ncont, protj->len);
+    }
+
     if(d2){
       Examine_neighbors(d2, ali_ij, *d02, shift[it], id_sup[it],
 			neigh_ali[it],neigh_noali[it],neigh_noali_aaid[it],
