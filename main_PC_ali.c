@@ -55,7 +55,7 @@ int DIV_ALIGNED=0; // Use aligned fraction score for computing divergence?
 int MAKE_CLIQUE=0; // Make clique as initial MSA?
 int PRINT_CV=0;   // Print clock violations?
 int PRINT_PDB=0;  // Print structures?
-int PRINT_ID=1;  // Print statistics of conserved residues?
+int PRINT_ID=0;  // Print statistics of conserved residues?
 //int PRINT_PAIR=0; // Print pairwise alignments?
 //int PRINT_CLIQUE=1; // Print multiple alignments based on cliques of pairwise?
 int ALI_SS=0;     // Modify Input alignment considering sec.str.?
@@ -538,10 +538,7 @@ int main(int argc, char **argv)
 
 
   // Conditional probabilities
-  char name_id[200]; FILE *file_id=NULL;
   if(PRINT_ID){
-    Change_ext(name_id, name_in, ".id");
-    file_id=fopen(name_id, "w");
     for(i=0; i<ATYPE; i++){
       id_aa[i]=malloc(N_ali*sizeof(int));
       id_sup[i]=malloc(N_ali*sizeof(int));
@@ -556,7 +553,6 @@ int main(int argc, char **argv)
       id_cont_aaid[i]=malloc(3*sizeof(int));
       ali_cont_aaid[i]=malloc(3*sizeof(int));
     }
-    fprintf(file_id,"# Conservation properties of aligned residues\n");
   }
 
   // PC0
@@ -1260,17 +1256,18 @@ int main(int argc, char **argv)
   /*****************************************************************
                  Print statistics for all types
   ******************************************************************/
-
-  if(file_id){
-    printf("Probabilities of identity written in %s for all pairs\n",name_id);
-    printf("Optimal alignment: %s\n", ali_name[it_opt]);
-    Summary_identical(file_id, it_opt);
-    //fclose(file_id);
-  }
-
   if(ALI_SS)printf("%s", ss_def);
+  printf("Optimal alignment: %s\n", ali_name[it_opt]);
 
-  if(PRINT_ID){
+  if(PRINT_ID ){
+    char name_id[200];
+    Change_ext(name_id, name_in, ".id");
+    printf("Probabilities of identity written in %s for all pairs\n",name_id);
+    FILE *file_id=fopen(name_id, "w");
+    fprintf(file_id,"# Conservation properties of aligned residues\n");
+    Summary_identical(file_id, it_opt);
+    fclose(file_id);
+
     for(i=0; i<ATYPE; i++){
       free(id_aa[i]);
       free(id_sup[i]);
@@ -1647,6 +1644,7 @@ void help(char *pname){
 	 "\t -print_sim    ! Print similarity measures for all pairs\n"
 	 "\t -print_div    ! Print PC divergence for all pairs\n"
 	 "\t -print_div_all ! Print all divergence measures for all pairs\n"
+	 "\t -print_id     ! Print statistics of identical residues\n"
 	 "\t -print_cv     ! Print clock violations\n"
 	 "\t -func <file with function similarity for pairs of proteins>\n\n");
   exit(8);
@@ -2402,6 +2400,8 @@ void Get_input(char *file_ali, char *file_list, char *file_fun,
       *PRINT_SIM=1;
     }else if(strcmp(argv[i], "-print_cv")==0){
       *PRINT_CV=1;
+    }else if(strcmp(argv[i], "-print_id")==0){
+      PRINT_ID=1;
     }else if(strcmp(argv[i], "-print_div_all")==0){
       PRINT_DIV_ALL=1;
     }else if(strcmp(argv[i], "-print_div")==0){
@@ -3065,7 +3065,6 @@ void Summary_identical(FILE *file_id, int it_opt)
       
   }	    
 
-  fclose(file_id);
   for(int k=0; k<2; k++){free(name_c[k]); free(name_ct[k]);}
 }
 
@@ -3495,12 +3494,14 @@ void Score_alignment(float *nali, float *SI, float *TM, float *CO,
     PC_all[it1][i][j]=PC[it];
     PC_div_all[it1][i][j]=PC_div[it];
 
-    Write_identity(it1, proti, protj, ali_ij,
-		   id_aa[it], id_sup[it], shift[it],
-		   neigh_ali[it], neigh_noali[it], neigh_noali_aaid[it],
-		   ali_cont_ct[it], id_cont_ct[it],
-		   ali_cont_sup[it], id_cont_sup[it],
-		   ali_cont_aaid[it], id_cont_aaid[it]);
+    if(PRINT_ID){
+      Write_identity(it1, proti, protj, ali_ij,
+		     id_aa[it], id_sup[it], shift[it],
+		     neigh_ali[it], neigh_noali[it], neigh_noali_aaid[it],
+		     ali_cont_ct[it], id_cont_ct[it],
+		     ali_cont_sup[it], id_cont_sup[it],
+		     ali_cont_aaid[it], id_cont_aaid[it]);
+    }
   }
 }
 

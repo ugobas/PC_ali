@@ -21,7 +21,8 @@ PC_ali   -pdblist <List of PDB files> Format: 1 file_name 2 chain 3 dir
 	# The pdb code is optionally followed by the chain index
 	# Ex: >1opd.pdb A or >1opdA or >1opd_A
 
-	 -pbdir <directory of pdb files>  (default: current directory)
+	 -pbdir <folder of pdb files>  (default: current directory)
+	 -pbdir2 <2nd folder of pdb files>  (default: current directory)
 	 -pdbext <extension of pdb files>  (default: .pdb)
 #### Optional parameters:
 	 -out <Name of output files> (default: alignment file)
