@@ -45,12 +45,18 @@ PC_ali  -pdblist <List of PDB files> Format: 1 file_name 2 chain 3 dir
 	 -shift_max <Maximum shift for targeting sec.str.>
 
 Computed similarity measures:
-	(1) Aligned fraction ali,
-	(2) Sequence identity SI,
-	(3) Contact overlap CO,
-	(4) TM-score TM (Zhang & Skolnick Proteins 2004 57:702)
-	(5) PC_sim, based on the main Principal Component of the four above similarity scores
-	They are printed in <>.prot.sim for all pairs of protein sequences, and also for multiple conformations of the same sequence (if present) if required with -print_sim
+
+(1) Aligned fraction ali,
+ 
+(2) Sequence identity SI,
+	
+(3) Contact overlap CO,
+	
+(4) TM-score TM (Zhang & Skolnick Proteins 2004 57:702)
+
+(5) PC_sim, based on the main Principal Component of the four above similarity scores
+	
+ They are printed in <>.prot.sim for all pairs of protein sequences, and also for multiple conformations of the same sequence (if present) if required with -print_sim
 
 Computed divergence measures:
 	(1) Tajima-Nei divergence TN=-log((SI-S0)/(1-S0)) with S0=0.06 (Tajima F & Nei 1984, Mol Biol Evol 1:269),
