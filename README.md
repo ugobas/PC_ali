@@ -18,7 +18,7 @@ In cases 2 and 3 PDB file names must be specified as sequence names.
 In case 1, the PDB files may be stored in two different folders. Folder 1 is input as -pdbdir, folder 2 is input as -pdbdir2, the folder of each PDB file (1 or 2) is specified in the 3rd column of the pdblist file (optional), default is folder 1. 
 It is not allowed to input both a list of PDB files and an MSA.
 
-Usage:
+## Usage:
 PC_ali  -pdblist <List of PDB files> Format: 1 file_name 2 chain 3 dir 
         -seq <sequences in FASTA format, with names of PDB files>
 	-ali <MSA file in FASTA format, with names of PDB files>
@@ -29,7 +29,7 @@ PC_ali  -pdblist <List of PDB files> Format: 1 file_name 2 chain 3 dir
  	-pbdir2 <2nd folder of pdb files>  (default: current directory)
   	-pdbext <extension of pdb files>  (default: .pdb)
 
-#### Optional parameters:
+## Optional parameters:
 	 -out <Name of output files> (default: alignment file)
   	 -sim_thr    <identity above which proteins are joined>
 	 -print_pdb    ! Print structure superimposition in PDB format
@@ -73,15 +73,15 @@ They are printed in <>.prot.div for all pairs of protein sequences, and also for
 9) Furthermore, if -print_cv is set, the program computes and prints for all four divergence measures the violations of the molecular clock averaged over all possible outgroups identified with the Neighbor-Joining criterion, and the corresponding significance score.
 
 
-# COMPILE:
+## COMPILE:
 >unzip PC_ali.zip
 >make
 >cp PC_ali ~/bin/ (or whatever path directory you like)
 
-# RUN:
+## RUN:
 >PC_ali -seq <sequence file> -pdbdir <path to PDB files>
 
-# EXAMPLE: 
+## EXAMPLE: 
 PC_ali -seq 50044_Mammoth.aln -pdbdir <PDBPATH>
 (all PDB files named in 50044_Mammoth.aln must be in <PDBPATH>)
 
