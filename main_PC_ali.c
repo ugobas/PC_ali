@@ -53,6 +53,7 @@
 
 int DIV_ALIGNED=0; // Use aligned fraction score for computing divergence?
 int MAKE_CLIQUE=0; // Make clique as initial MSA?
+int OMIT_SAME=0;   // Consider only first conformation for same seq group
 int PRINT_CV=0;   // Print clock violations?
 int PRINT_PDB=0;  // Print structures?
 int PRINT_ID=0;  // Print statistics of conserved residues?
@@ -73,7 +74,6 @@ int INP_MSA=0;   // Sequences input as MSA?
 
 int PRINT_SIM=0;  // Print matrix of similarities?
 int PRINT_DIV=0;
-int PRINT_DIV_ALL=0;  // Print matrix of divergences?
 int PRINT_AVE=0;  // Print average values as a function of d?
 int PRINT_GAP=0; // Examine relationship between Triangle Inequality and gaps?
 int PRINT_SIM_ALL=0; // Print similarity for all conformations?
@@ -103,7 +103,7 @@ int NORM, NORMA;
 
 float fun_high=0.90;
 float fun_low=0.70;
-int diff_thr=6;  // Minimum number of differences for joining sequences
+float sim_thr=0.95;  // join sequences with > sim_thr identity
 
 int IJ_MIN=IJ_MIN_DEF;        // Only contacts with |i-j|>=IJ_MIN
 float CONT_THR=CONT_THR_DEF;
@@ -123,7 +123,7 @@ struct Prot_input{
 
 // Alignments
 int ALL_TYPES=1; // Record for all ali types or only INP and PCAli-mult?
-int ATYPE=0, PTYPE=0, CTYPE=0;
+int ATYPE=0, PTYPE=0, CTYPE=0, PT1;
 char *ali_name[NTYPE];
 int code[NTYPE];
 static void Set_type(char **ali_name,int *code,int *ATYPE,char *name,int it);
@@ -178,6 +178,8 @@ int *id_aa[NTYPE], *id_sup[NTYPE], *shift[NTYPE],
   *ali_cont_aaid[NTYPE], *id_cont_aaid[NTYPE];
 
 extern void Print_pdb(char *name_in, struct protein **prot_p, int n);
+extern float Compute_RMSD(struct protein **prot_p, int ci, int cj,
+			  int **msa, int L_msa);
 extern void All_distances(float **d2, float *x1, int n1, float *x2, int n2);
 void Score_alignment(float *nali, float *SI, float *TM, float *CO,
 		     float *PC, float *PC_d,
@@ -258,7 +260,7 @@ void Print_scores(char *out, double *s1, char *what);
 float SI_thr=0.10; //0.12
 
 void Print_ali_ss(int *ali_i, short *ss_i, int *ali_j, short *ss_j, int N_ali);
-char PDB_DIR2[100]="";
+char PDBDIR2[100]="";
 
 /*********************************************************************
                           MAIN routine
@@ -269,9 +271,9 @@ int main(int argc, char **argv)
   NORM=0; // Normalize with minimum (0) maximum (1) or geometric mean (2)?
   NORMA=0; // Normalize with nali (1) or with NORM (0)?
   int ITMAX1=ITMAX-1;
-  char PDB_DIR[100]="", PDB_EXT[10]=".pdb", OUTG[10]="PC";
+  char PDBDIR[100]="", PDB_EXT[10]=".pdb", OUTG[10]="PC";
   char file_ali[200]="", file_list[200]="", file_fun[200]="", name_in[80]="";
-  Get_input(file_ali, file_list, file_fun, name_in, PDB_DIR, PDB_EXT,
+  Get_input(file_ali, file_list, file_fun, name_in, PDBDIR, PDB_EXT,
 	    OUTG, &NORM, &ALI_SS, &SHIFT_MAX, &SS_MULT,
 	    &PRINT_SIM, &PRINT_CV, &PRINT_DIV,
 	    //&PRINT_PAIR, &PRINT_CLIQUE,
@@ -284,8 +286,8 @@ int main(int argc, char **argv)
     printf("WARNING, the input alignment is not an MSA and "
 	   "it cannot be modified\nSetting ALI_SS=0\n"); ALI_SS=0; 
   }
-
-
+  
+  
   // Input sequences and structures
   int N_ali=0, i, j, N_prot=0, N_prot_seq=0, N_ali_seq=0;
   struct Prot_input *Prot_in=NULL, *Prot_seq=NULL;
@@ -299,7 +301,7 @@ int main(int argc, char **argv)
       N_prot_seq=Get_sequences(&Prot_seq, &N_ali_seq, file_ali, 0);
     }
   }
-
+  
   // Output alignment types
   for(i=0; i<NTYPE; i++)code[i]=-1;
   ATYPE=0;
@@ -311,6 +313,7 @@ int main(int argc, char **argv)
   if(ALI_CO)Set_type(ali_name, code, &ATYPE, "CO", 3);
   if(ALI_PC)Set_type(ali_name, code, &ATYPE, "PC", 4);
   PTYPE=ATYPE; // Only pairwise alignments
+  PT1=PTYPE-1;
   if(ALI_PC){
     if(NTYPE < PTYPE+NMSA){
       printf("WARNING, the number of built MSA must be <= PTYPE+%d=%d "
@@ -325,7 +328,7 @@ int main(int argc, char **argv)
   }
   if(ALL_TYPES){CTYPE=ATYPE;}
   else{CTYPE=2;}
-
+  
   float CO[ATYPE], TM[ATYPE], SI[ATYPE], PC[ATYPE], nali[ATYPE], PC_d[ATYPE];
   for(i=0; i<ATYPE; i++){
     opt_PC[i]=0; Diff_opt[i]=0;
@@ -340,40 +343,45 @@ int main(int argc, char **argv)
   
   // What to print ? 
   //if((PRINT_CV==0)&&(PRINT_SIM==0))PRINT_DIV=1;
-
-
+  
+  
   /**************   READ PROTEIN STRUCTURES  ******************/
   // Read PDB files and compute contact matrices
   Set_contact_type();
   printf("Contact type: %c Threshold: %.2f A |i-j|>%d\n",
 	 CONT_TYPE, CONT_THR,IJ_MIN);
-
-  // Add final / to PDB_DIR
-  if(PDB_DIR[0]!='\0'){
-    char *c=PDB_DIR, *c1=c+1;
+  
+  // Add final / to PDBDIR
+  if(PDBDIR[0]!='\0'){
+    char *c=PDBDIR, *c1=c+1;
     while(*c1!='\0'){c=c1; c1++;}
-    if(*c!='/')strcat(PDB_DIR,"/");
-    printf("Looking for PDB files in directory %s\n", PDB_DIR);
+    if(*c!='/')strcat(PDBDIR,"/");
+    printf("Looking for PDB files in directory %s\n", PDBDIR);
   }
-  if(PDB_DIR2[0]!='\0'){
-    char *c=PDB_DIR2, *c1=c+1;
+  if(PDBDIR2[0]!='\0'){
+    char *c=PDBDIR2, *c1=c+1;
     while(*c1!='\0'){c=c1; c1++;}
-    if(*c!='/')strcat(PDB_DIR2,"/");
-    printf("Looking for PDB files in directory %s\n", PDB_DIR2);
+    if(*c!='/')strcat(PDBDIR2,"/");
+    printf("Looking for PDB files in directory %s\n", PDBDIR2);
   }
-
+  
   // Proteins prots
   struct protein prots[N_prot], *prot=prots;
   int N_pdb=0, i_seq[N_prot], L_seq[N_prot];
   int **Prot_ali=NULL; if(N_ali){Prot_ali=Allocate_mat2_i(N_prot, N_ali);}
-
+  
   for(i=0; i<N_prot; i++){
     //char pdb[90]; sprintf(pdb, "%s%s", Prot_in[i].name, PDB_EXT);
     printf("\nReading PDB:%s %c\n", Prot_in[i].name, Prot_in[i].chain);
     Initialize_prot(prot);
-    char *PDB_D=PDB_DIR; if(Prot_in[i].dir){PDB_D=PDB_DIR2;}
-    if(Read_PDB_compress(&prot, Prot_in[i].name, &(Prot_in[i].chain),
-			 PDB_D, PDB_EXT)>0){
+    char *PDB_D=PDBDIR; if(Prot_in[i].dir){PDB_D=PDBDIR2;}
+    int r=Read_PDB_compress(&prot, Prot_in[i].name, &(Prot_in[i].chain),
+			    PDB_D, PDB_EXT);
+    if(r==0 && PDBDIR2[0]!='\0'){
+      r=Read_PDB_compress(&prot, Prot_in[i].name, &(Prot_in[i].chain),
+			  PDBDIR2, PDB_EXT);
+    }
+    if(r>0){
       printf("L= %d\n", prot->len);
       if(Prot_in[i].seq){
 	Prot_in[i].len=Count_AA(Prot_in[i].seq, N_ali);
@@ -397,7 +405,7 @@ int main(int argc, char **argv)
       if(Prot_in[i].len<prot->len){prot->len=Prot_in[i].len;}
       L_seq[N_pdb]=prot->len;
       if(Prot_ali==NULL && prot->len>N_ali){N_ali=prot->len;}
-
+      
       int NC=Compute_contact_list(prot, CONT_TYPE, CONT_THR, IJ_MIN);
       printf("%d contacts\n", NC);
       Set_scores(prot);
@@ -408,7 +416,7 @@ int main(int argc, char **argv)
   if(N_pdb<2){
     printf("ERROR, fewer than 2 proteins found\n"); exit(8);
   }
-
+  
   // Average number of contacts per residue
   c_ave=0; double c_norm=0;
   for(i=0; i<N_pdb; i++){
@@ -418,17 +426,17 @@ int main(int argc, char **argv)
   }
   c_ave/=c_norm;
 
-
+  
   // Alignments
   if(Prot_ali==NULL){N_ali*=2; Prot_ali=Allocate_mat2_i(N_prot, N_ali);}
   int N_ali_max=3*N_ali, N_ali_max_ini=N_ali_max;
-
+  
   /**************************************
       Secondary structure based alignment
-   *******************************************/
+  *******************************************/
   int **Prot_ali_ss=NULL, **Prot_ali_ij=NULL, NS=0;
   struct protein **prot_ij=NULL;
-
+  
   if(Set_sec_str(prots, N_pdb)<0){ // Change - into c
     printf("WARNING, secondary structure information not found\n");
     ALI_SS=0; goto end_ss;
@@ -444,7 +452,7 @@ int main(int argc, char **argv)
     if(SS_MULT){NS=N_pdb;}else{NS=2;}
     Prot_ali_ss=malloc(NS*sizeof(int *));
     for(i=0; i<NS; i++)Prot_ali_ss[i]=malloc(N_ali*sizeof(int));
- 
+    
     if(SS_MULT){
       int N_ali_ss=
 	Align_ss(Prot_ali_ss, Prot_ali, N_ali, prot_ij, N_pdb, SHIFT_MAX, 1);
@@ -481,23 +489,21 @@ int main(int argc, char **argv)
     strcat(norm_def,"# Normalization of seqid, TM-score and CO: ");
     strcat(norm_def, " aligned residues\n");
   }
-
+  
   char name_sim[100]; FILE *file_sim=NULL;
   if(PRINT_SIM_ALL){
     Change_ext(name_sim, name_in, EXT_SIM);
     file_sim=fopen(name_sim, "w");
-    fprintf(file_sim, "### Prot1 Prot2 Seq_Id Cont_Overlap TM_Score align ");
-    if(ALL_TYPES && ALI_SS)
-      fprintf(file_sim, " Seq_Id_SS Cont_Ov_SS TM_SS align_SS");
-    if(ALI_PC)fprintf(file_sim, " Seq_Id_PC Cont_Ov_PC TM_PC align_PC\n");
+    fprintf(file_sim, "### Prot1 Prot2 align Seq_Id Cont_Overlap TM_Score");
+    if(ALL_TYPES && ALI_PC)
+      fprintf(file_sim, " align_PC Seq_Id_PC Cont_Ov_PC TM_PC\n");
     fprintf(file_sim, "### 0 0  1 1 1 1");
-    if(ALL_TYPES && ALI_SS)fprintf(file_sim, "  0 0 0 0");
-    if(ALI_PC)fprintf(file_sim, "  1 1 1 1");
+    if(ALL_TYPES && ALI_PC)fprintf(file_sim, "  1 1 1 1");
     fprintf(file_sim, "\n");
   }
-
+  
   // Allocate pairwise computations only for i>j
-
+  
   ///////////////////////////////////
   int *ali_ij=malloc(N_ali_max*sizeof(int));  // Input MSA
   int *ali_tmp=malloc(N_ali_max*sizeof(int));
@@ -509,12 +515,12 @@ int main(int argc, char **argv)
     Seq_diff[i][i]=0;
     for(j=0; j<i; j++)Seq_diff[i][j]=L_seq[i];
   }
-
+  
   int *ali_all[ATYPE];
   for(int it=0; it<ATYPE; it++){
     ali_all[it]=malloc(N_ali_max*sizeof(int));
   }
-
+  
   // For computing divergence, PC is computed without tha nali part
   float **na_all[CTYPE], **SI_all[CTYPE], **TM_all[CTYPE],
     **CO_all[CTYPE], **PC_all[CTYPE], **PC_div_all[CTYPE];
@@ -597,29 +603,31 @@ int main(int argc, char **argv)
          Pairwise computations for all PDB pairs j<i
    *************************************************************/
   printf("Computing pairwise structural scores\n");
+  int seq_group[N_pdb];
   for(i=0; i<N_pdb; i++){
     int al1i=i_seq[i];
     struct protein *proti=prots+i;
     printf("Str %s %d of %d L= %d\n", proti->name, i, N_pdb, proti->len);
+    seq_group[i]=-1;
 
     if(ALI_SS && SS_MULT==0){
       prot_ij[0]=prots+i; Prot_ali_ij[0]=Prot_ali[i];
     }
-
+    
     for(j=0; j<i; j++){
       struct protein *protj=prots+j;
       npair_pdb++;
 
       // Sequence differences
       int id, al1j=i_seq[j];
-
+      
       // Normalization
       float norm_c, norm_ali=Normalization(&norm_c, proti, protj);
-
+      
       // General
       float d02=0; 
       int Comp_TM=1;
-
+      
       // Input alignment
       int it=0;
       if(INP_MSA){
@@ -632,16 +640,21 @@ int main(int argc, char **argv)
 	//printf("Performing pairwise alignment\n");
 	Align_PC_NW_pair(ali_ij, NULL, NULL, proti, protj);
       }
-
-      //Seq_diff[i][j]=
-      //Seq_differences(&id, Prot_in[al1i].seq, Prot_in[al1j].seq, N_ali);
-
+      
       Score_alignment(nali, SI, TM, CO, PC, PC_d, i, j, Seq_diff, 
 		      na_all, SI_all, TM_all, CO_all, PC_all, PC_div_all,
 		      NULL, NULL, c_ave, &d02, d2, ali_all[it],
 		      ali_ij, Comp_TM, TMs, proti, protj,
 		      norm_c, norm_ali, it, 0);
 
+      // Leave if sequence identity is above threshold
+      if(OMIT_SAME && SI[it] > sim_thr){
+	printf("prots %s and %s are almost identical, omitting %s\n",
+	       proti->name, protj->name, proti->name);
+	seq_group[i]=seq_group[j];
+	goto end_i;
+      }
+      
       Comp_TM=1;
       // Sec.str. corrected alignments 
       if(ALI_SS){
@@ -788,6 +801,7 @@ int main(int argc, char **argv)
 	  opt_PC[kk]++;
 	  if(PC[it]>=PC[kk]){ko=it;}else{ko=kk;}
 	  Write_ali_pair(Ali_pair, i, j, L_seq, ali_all[ko]);
+	  printf("Writing alignment %d %d\n", i, j); //exit(8);
 	  k_PC=ko;
 	  //PC_opt_pair[i][j]=ko;
 	}else if(ALI_CO && strcmp(ali_name[it],"CO")==0){ // CO_ali
@@ -806,14 +820,18 @@ int main(int argc, char **argv)
       if(file_sim){
 	fprintf(file_sim, "%s\t%s", proti->name, protj->name);
 	for(int a=0; a<PTYPE; a++){
-	if(ALL_TYPES==0 && a)break; // Print only input
-	fprintf(file_sim,"\t%.3f\t%.3f\t%.3f\t%.3f",
-		SI[a],CO[a],TM[a],nali[a]);
+	  if(a){
+	    if(ALL_TYPES==0)break; // Print only input
+	    if(ALL_TYPES && a< PT1)continue; // Print input+ALI_PC
+	  }
+	  fprintf(file_sim,"\t%.3f\t%.3f\t%.3f\t%.3f",
+		  nali[a],SI[a],CO[a],TM[a]);
 	}
 	fprintf(file_sim,"\n");
       }
-    }
-
+    } // end j
+    seq_group[i]=i;
+  end_i: continue;
   } // end pairs
   Empty_matrix_i(nc, N_ali);
   Empty_matrix_f(d2, N_ali);
@@ -833,18 +851,54 @@ int main(int argc, char **argv)
   **************************************************************************/
   // Group identical sequences
   // Structural divergence: minimum among all conformations 
-  printf("Grouping identical sequences by single linkage\n");
-  int **conformation, *N_conf, *seq_clus;
-  for(i=0; i<N_pdb; i++)for(j=0; j<i; j++)Seq_diff[j][i]=Seq_diff[i][j];
-  int N_seq=Single_linkage(&conformation, &N_conf, &seq_clus,
-			   Seq_diff, N_pdb, diff_thr);
-  rep_str=Representative_structure(N_conf, conformation, N_seq,
-				   prots, PC_all[code[4]]);
-
+  printf("Grouping proteins with > %.3f seq.identity\n", sim_thr);
+  float diff_thr=1-sim_thr;
+  int **conformation, *N_conf;
+  for(i=0; i<N_pdb; i++){
+    for(j=0; j<i; j++){
+      if(L_seq[i]<L_seq[j]){Seq_diff[i][j]/=L_seq[i];}
+      else{Seq_diff[i][j]/=L_seq[j];}
+      Seq_diff[j][i]=Seq_diff[i][j];
+    }
+  }
+  int N_seq=Single_linkage(&conformation, &N_conf, Seq_diff, N_pdb, diff_thr);
   printf("%d conformations grouped into %d sequences\n", N_pdb, N_seq);
   //printf("Number of conformations per sequence: ");
   //for(i=0; i<N_seq; i++){printf("%d (rep=%d) ",N_conf[i], rep_str[i]);}
   printf("Average conf. per sequence: %.1f\n", (float)N_pdb/N_seq);
+
+
+  if(N_seq==1){
+    printf("WARNING, only one protein found\n"
+	   "I'll consider each conformation as a different protein\n");
+    free(N_conf); free(conformation[0]); free(conformation);
+    N_seq=N_pdb;
+    N_conf=malloc(N_seq*sizeof(int));
+    conformation=malloc(N_seq*sizeof(int *));
+    for(i=0; i<N_seq; i++){
+      N_conf[i]=1;
+      conformation[i]=malloc(1*sizeof(int));
+      conformation[i][0]=i;
+    }
+  }
+  if(N_seq<=1){
+    printf("ERROR, only one protein to examine\n"); 
+    exit(8);
+  }
+
+  if(OMIT_SAME==0){
+    rep_str=Representative_structure(N_conf, conformation, N_seq,
+				    prots, PC_all[code[4]]);
+  }else if(OMIT_SAME){
+    // Representative structure is first one
+    rep_str=malloc(N_seq*sizeof(int));
+    for(i=0; i<N_seq; i++){
+      rep_str[i]=conformation[i][0];
+      for(j=1; j<N_conf[i]; j++){
+	if(conformation[i][j]<rep_str[i])rep_str[i]=conformation[i][j];
+      }
+    }
+  }
 
   /***************************************************************************
     Minimum structure divergence over all conformations of the same protein
@@ -870,27 +924,32 @@ int main(int argc, char **argv)
   for(i=0; i<5; i++)Sim_max[i]=Allocate_mat2_f(N_seq, N_seq); 
   
   for(i=0; i<N_seq; i++){
-    struct protein *proti=prots+rep_str[i];
+    int c2=rep_str[i];
+    struct protein *proti=prots+c2;
     for(j=0; j<i; j++){
-      struct protein *protj=prots+rep_str[j];
-
+      int c1=rep_str[j];
+      struct protein *protj=prots+c1;
       int c1max, c2max, c1min, c2min; float PC_max;
       if(N_seq == N_pdb){
-	c1max=j; c2max=i; c1min=j; c2min=i;
+	c1max=j; c1min=j; c2max=i; c2min=i;
 	PC_max=PC_all[it][i][j];
+      }else if(OMIT_SAME){
+	c1max=c1; c1min=c1; c2max=c2; c2min=c2;
+	if(c1<c2){PC_max=PC_all[it][c2][c1];}
+	else{PC_max=PC_all[it][c1][c2];}
       }else{
 	c1max=-1; c2max=-1; c1min=-1; c2min=-1;
 	PC_max=0; float PC_min=2; 
 	for(int ki=0; ki<N_conf[i]; ki++){
 	  int ci=conformation[i][ki];
 	  for(int kj=0; kj<N_conf[j]; kj++){
-	    int cj=conformation[j][kj], c1, c2;
-	    if(cj>ci){c2=cj; c1=ci;}else{c2=ci; c1=cj;}
-	    if(PC_all[it][c2][c1]>PC_max){
-	      PC_max=PC_all[it][c2][c1]; c1max=c1; c2max=c2;
+	    int cj=conformation[j][kj], cc1, cc2;
+	    if(cj>ci){cc2=cj; cc1=ci;}else{cc2=ci; cc1=cj;}
+	    if(PC_all[it][cc2][cc1]>PC_max){
+	      PC_max=PC_all[it][cc2][cc1]; c1max=cc1; c2max=cc2;
 	    }
-	    if(PRINT_CV && PC_all[it][c2][c1]<PC_min){
-	      PC_min=PC_all[it][c2][c1]; c1min=c1; c2min=c2;
+	    if(PRINT_CV && PC_all[it][cc2][cc1]<PC_min){
+	      PC_min=PC_all[it][cc2][cc1]; c1min=cc1; c2min=cc2;
 	    }
 	  } 
 	}// end loop on conformations
@@ -924,14 +983,15 @@ int main(int argc, char **argv)
   /******************************************************************/
 
   int it_opt=-1;
+  int **msa_opt=NULL, L_msa_opt=0;
   if(ALI_PC){
     printf("Making %d multiple alignments\n", NMSA);
     int **msa=Allocate_mat2_i(N_seq, N_ali_max);
-    int **msa_opt=Allocate_mat2_i(N_seq, N_ali_max);
+    msa_opt=Allocate_mat2_i(N_seq, N_ali_max);
     PC_Div_opt=Allocate_mat2_f(N_seq, N_seq);
 
     float PC_opt=0, PC_prev[NMSA];
-    int len_seq[N_seq], i, L_msa=0, L_msa_opt=0;
+    int len_seq[N_seq], i, L_msa=0;
     char name_PC[90], name_msa[95];
     sprintf(name_PC, "%s.PCAli", name_in);
     sprintf(name_msa, "%s.fas", name_PC);
@@ -1067,7 +1127,7 @@ int main(int argc, char **argv)
     printf("Initial MSA length: %d Optimal: %d\n", N_ali, L_msa_opt);
     Print_MSA(msa_opt, name_msa,N_seq,L_msa_opt, len_seq, Seq, name_seq);
     Write_ss_ali(msa_opt, prot_p,N_seq, L_msa_opt, name_in, "PCAli");
-    if(PRINT_PDB)Print_pdb(name_in, prot_p, N_seq);
+    if(PRINT_PDB){Print_pdb(name_in, prot_p, N_seq);}
     for(i=0; i<N_seq; i++) {
       PC_Div_opt[i][i]=0;
       for(j=0; j<i; j++)PC_Div_opt[j][i]=PC_Div_opt[i][j]; // Symmetrize
@@ -1095,7 +1155,6 @@ int main(int argc, char **argv)
       Empty_matrix_i(Ali_pair_seq[i], n);
     }
     Empty_matrix_i(msa, N_seq);
-    Empty_matrix_i(msa_opt, N_seq);
     //Empty_matrix_f(PC_Div_opt, N_seq);
 
     {
@@ -1179,9 +1238,8 @@ int main(int argc, char **argv)
   // Open output files
   char name_div_all[100];
   FILE *file_div_all=NULL; file_sim=NULL;
-  if(PRINT_DIV_ALL)file_div_all=Open_file_div(name_div_all, name_in, head);
-  if(PRINT_SIM)file_sim=Open_file_sim(name_sim, name_in, head, fun_sim_Seq);
-
+  //if(PRINT_DIV_ALL)file_div_all=Open_file_div(name_div_all, name_in, head);
+  if(PRINT_SIM){file_sim=Open_file_sim(name_sim, name_in, head, fun_sim_Seq);}
   float **TN_Div=Allocate_mat2_f(N_seq, N_seq);
   float **TM_Div=Allocate_mat2_f(N_seq, N_seq);
   float **Cont_Div=Allocate_mat2_f(N_seq, N_seq);
@@ -1193,7 +1251,7 @@ int main(int argc, char **argv)
       int cj=rep_str[j]; struct protein *pj=prots+cj;
        
       if(file_sim)fprintf(file_sim, "%s\t%s", pi->name, pj->name);
-      if(file_div_all)fprintf(file_div_all, "%s\t%s", pi->name, pj->name);
+      //if(file_div_all)fprintf(file_div_all, "%s\t%s", pi->name, pj->name);
 
       for(int it=0; it<2; it++){
 	int a; int c1, c2;
@@ -1207,6 +1265,10 @@ int main(int argc, char **argv)
 	  fprintf(file_sim, "\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f",
 		  na_all[a][c2][c1], SI_all[a][c2][c1],CO_all[a][c2][c1],
 		  TM_all[a][c2][c1], PC_all[a][c2][c1]);
+	  if(msa_opt){
+	    float RMSD=Compute_RMSD(prot_p, c2, c1, msa_opt, L_msa_opt);
+	    fprintf(file_sim, "\t%.3f", RMSD);
+	  }
 	}
 	
 	// Print divergence
@@ -1218,9 +1280,9 @@ int main(int argc, char **argv)
 	double PC0=(PC0_1+PC_load[3]*qinf)/PC_norm_div;
 	double PC_a=PC_div_all[a][c2][c1];
 	double DP=Divergence(PC_a, PC0, DMAX);
-	if(file_div_all){
+	/*if(file_div_all){
 	  fprintf(file_div_all, "\t%.3f\t%.3f\t%.3f\t%.3f", DS, DC, DT, DP);
-	}
+	  }*/
 	if(it){
 	  Seq_Id[i][j]=SI_all[a][c2][c1];
 	  Cont_Div[i][j]=DC;
@@ -1239,7 +1301,7 @@ int main(int argc, char **argv)
 	if(fun_sim_Seq)fprintf(file_sim,"\t%.3f",fun_sim_Seq[i][j]);
 	fprintf(file_sim,"\n");
       }
-      if(file_div_all)fprintf(file_div_all,"\n");
+      //if(file_div_all)fprintf(file_div_all,"\n");
       
     } // end j
   } // end i
@@ -1248,11 +1310,13 @@ int main(int argc, char **argv)
     printf("Similarities between sequences written in %s\n",name_sim);
     fclose(file_sim);
   }
-  if(file_div_all){
+  /*if(file_div_all){
     printf("Divergences between sequences written in %s\n",name_div_all);
     fclose(file_div_all);
-  }
+    }*/
   
+  Empty_matrix_i(msa_opt, N_seq);
+
   /*****************************************************************
                  Print statistics for all types
   ******************************************************************/
@@ -1353,12 +1417,12 @@ int main(int argc, char **argv)
   char head2[5000], ALI[100];
   sprintf(head2,
 	  "# %d sequences aligned with %d PDB files\n"
-	  "# %d groups of sequences with < %d intragroup substitutions\n"
+	  "# %d groups of sequences with > %d intragroup seq.id\n"
 	  "# Average number of structures per group: %.1f\n"
 	  "# Outgroups assigned with NJ using divergence %s "
 	  " constructed with alignment %s\n"
 	  "# Multiple sequence alignment: %s\n", 
-	  N_prot, N_pdb, N_seq, diff_thr, N_pdb/(float)N_seq, file_ali,
+	  N_prot, N_pdb, N_seq, sim_thr, N_pdb/(float)N_seq, file_ali,
 	  OUTG, ali_name[o]);
   strcpy(ALI,"SqAli");
 
@@ -1574,6 +1638,8 @@ void help(char *pname){
 	 "\t -seq <sequences in FASTA format, with names of PDB files>\n"
 	 "\t # The pdb code is optionally followed by the chain index\n"
 	 "\t # Ex: >1opd.pdb A or >1opdA or >1opd_A\n"
+	 "\t -sim_thr <threshold above which sequences are joined>\n"
+	 "\t # For avoiding to join, set -sim_thr 1\n"
 	 "\t -clique ! Initial alignment is based on cliques\n\n");
   printf("Computed similarity measures:\n"
 	 "(1) Aligned fraction ali,\n"
@@ -1593,14 +1659,13 @@ void help(char *pname){
   printf("Flux of the program:\n"
 	 "(1) In the modality -ali, the program starts from the pairwise alignments obtained from the input MSA. In the modality -seq the starting pairwise alignments are built internally.\n"
 	 "(2) The program then modifies the pairwise alignments by targeting PC_sim. The similarity matrix is constructed recursively, using the input pairwise alignment for computing the shared contacts and the distance after optimal superimposition (maximizing the TM score) for all pairs of residues and obtaining a new alignments. Two iterations are usually enough for getting good results. Optionally, for the sake of comparison, the program can target the TM score (-ali_tm), the Contact Overlap (-ali_co) and the secondary structure superposition (-ali_ss).\n"
-	 "(3) Then, the program builds the multiple alignment based on the maximal cliques of the pairwise alignments. This computation does not require neither a guide tree nor gap penalty parameters and in most cases it is faster than the progressive multiple alignment.\n"
-	 "(4) Finally, the program runs iteratively progressive multiple alignments using as guide tree the average linkage tree obtained with the PC_Div divergence measure of the previous step and using as starting alignment the previous multiple alignment. The best MSA is selected as the one with the maximum value of the average PC similarity score.\n"
-	 "(5) The program prints the optimal MSA and the Neighbor Joining tree obtained from the corresponding PC_Div divergence measure.\n"
-	 "(6) Optionally, if -print_pdb is set, the program prints the multiple superimposition obtained by maximizing the TM score\n" 
-	 "(7) Furthermore, if -print_cv is set, the program computes and prints for all four divergence measures the violations of the molecular clock averaged over all possible outgroups identified with the Neighbor-Joining criterion, and the corresponding significance score.\n\n");
-
-  printf("In the first pairwise phase, the program computes similarity and divergence scores for all pairs of protein structures. It then clusters all conformations of the same protein and computes the structural similarity (divergence) between two proteins as the maximum (minimum) across all the examined conformations.\n"
-	 "The similarity and divergence scores are computed for the starting alignment, for the modified pairwise alignments that target different similarity scores (TM score, contact overlap and PC_sim) and for the best multiple alignment.\n\n");
+	 "(3) Sequences with > sim_thr identity are joined together, to accelerate computations and reduce the output size. They represent different conformations of the same protein. The structural similarity (divergence) between two proteins is computed as the maximum (minimum) across all the examined conformations. The clustering can be avoided by setting -sim_thr 1\n"
+	 "(4) Then, the program builds progressive multiple alignments. If the option -clique is set, the starting MSA is based on the maximal cliques of the pairwise alignments, which does not require neither a guide tree nor gap penalty parameters, however it can become slow for large data sets.\n"
+	 "(5) Finally, the program runs iteratively progressive multiple alignments using as guide tree the average linkage tree obtained with the PC_Div divergence measure of the previous step and using as starting alignment the previous multiple alignment. The best MSA is selected as the one with the maximum value of the average PC similarity score.\n"
+	 "(6) The program prints the optimal MSA and the Neighbor Joining tree obtained from the corresponding PC_Div divergence measure.\n"
+	 "(7) If the options -print_sim or -print_div are set, the program prints in files <>.prot.sim and <>.prot.div similarity and divergence scores for the input MSA (if present) and for the final MSA.\n"
+	 "(8) If -print_pdb is set, the program prints the multiple superimposition obtained by maximizing the TM score\n"
+	 "(9) Furthermore, if -print_cv is set, the program computes and prints for all four divergence measures the violations of the molecular clock averaged over all possible outgroups identified with the Neighbor-Joining criterion, and the corresponding significance score.\n\n");
 
   printf("COMPILE:\n"
 	 ">unzip PC_ali.zip\n"
@@ -1634,19 +1699,21 @@ void help(char *pname){
 	 "\t -pdbext <extension of pdb files>  (default: .pdb)\n"
 	 "#### Optional parameters:\n"
 	 "\t -out <Name of output files> (default: alignment file)\n"
+	 "\t -sim_thr     ! Identity above which sequences are joined "
+	 "(def. %.3f)\n"
+	 "\t -print_pdb    ! Print multiple structure superimposition\n"
+	 "\t -print_sim    ! Print similarity measures for all pairs\n"
+	 "\t -print_div    ! Print PC divergence for all pairs\n"
 	 "\t -clique ! Initial alignment is based on cliques\n"
 	 "\t -ali_tm     ! Make pairwise alignments that target TM score\n"
 	 "\t -ali_co     ! Make pairwise alignments that target Cont Overlap\n"
 	 "\t -ali_ss     ! Make alignments that target sec.structure\n"
 	 "\t -ss_mult    ! target sec.structure with multiple alignment\n"
 	 "\t -shift_max <Maximum shift for targeting sec.str.>\n"
-	 "\t -print_pdb    ! Print multiple structure superimposition\n"
-	 "\t -print_sim    ! Print similarity measures for all pairs\n"
-	 "\t -print_div    ! Print PC divergence for all pairs\n"
-	 "\t -print_div_all ! Print all divergence measures for all pairs\n"
 	 "\t -print_id     ! Print statistics of identical residues\n"
 	 "\t -print_cv     ! Print clock violations\n"
-	 "\t -func <file with function similarity for pairs of proteins>\n\n");
+	 "\t -func <file with function similarity for pairs of proteins>\n"
+	 "\n", sim_thr);
   exit(8);
 }
 
@@ -1696,7 +1763,7 @@ void Print_ali_ss(int *ali_i, short *ss3_i, int *ali_j, short *ss3_j,
 }
 
 int Get_alignment_old(struct Prot_input **Prot_input, int *Nali,
-		      char *PDB_DIR, char *PDB_EXT, int *PRINT_SIM,
+		      char *PDBDIR, char *PDB_EXT, int *PRINT_SIM,
 		      char *file_ali)
 {
   // Open file
@@ -1711,8 +1778,8 @@ int Get_alignment_old(struct Prot_input **Prot_input, int *Nali,
       n++;
     }else if(n==0){
       if(strncmp(string, "PDBDIR", 6)==0){
-	sscanf(string+7,"%s", PDB_DIR);
-	printf("Directory for PDB files: %s\n", PDB_DIR);
+	sscanf(string+7,"%s", PDBDIR);
+	printf("Directory for PDB files: %s\n", PDBDIR);
 	dir=1;
       }else if(strncmp(string, "PDBEXT", 6)==0){
 	sscanf(string+7, "%s", PDB_EXT);
@@ -1831,27 +1898,18 @@ int Get_pdb_list(struct Prot_input **Prot_input, char *input)
     char name[80], chain[10]; int dir=0;
     int arg=sscanf(string, "%s%s%d", name, chain, &dir);
     strcpy((*Prot_input)[n].name, name);
+    (*Prot_input)[n].chain=' ';
     // get chain
     if((arg>1)&&(chain[0]!='\0')&&(chain[0]!='\n')){
       (*Prot_input)[n].chain=chain[0];
-    }else if(name[4]=='_'){
-      printf("Getting chain after _\n");
-      (*Prot_input)[n].name[4]='\0';
-      (*Prot_input)[n].chain=name[5];
-    }else if((name[4]>=65)&&(name[4]<=90)){ // Maiuscule
-      printf("Getting chain after character 4\n");
-      (*Prot_input)[n].name[4]='\0';
-      (*Prot_input)[n].chain=name[4];
-    }else{
-      (*Prot_input)[n].chain=' ';
     }
     if(arg<3){dir=0;}else{dir--;}
     if(dir!=0 && dir !=1){
       printf("ERROR reading %s, the folder can be either 1 or 2\n"
 	     "Just read: %s", input, string); exit(8);
-    }else if(dir==1 && PDB_DIR2[0]=='\0'){
-      printf("ERROR reading %s, folder is 1 but PDB_DIR2 not given (%s)\n",
-	     "Just read: %s", input, PDB_DIR2, string); exit(8);
+    }else if(dir==1 && PDBDIR2[0]=='\0'){
+      printf("ERROR reading %s, folder is 1 but PDBDIR2 not given (%s)\n",
+	     "Just read: %s", input, PDBDIR2, string); exit(8);
     }
     (*Prot_input)[n].dir=dir;
     printf("%s %c %d\n", (*Prot_input)[n].name, (*Prot_input)[n].chain, dir);
@@ -1864,7 +1922,7 @@ int Get_pdb_list(struct Prot_input **Prot_input, char *input)
 }
 
 int Get_sequences(struct Prot_input **Prot_input, int *Nali, char *file_ali,
-		  int INP_MSA) //char *PDB_DIR, char *PDB_EXT, 
+		  int INP_MSA) //char *PDBDIR, char *PDB_EXT, 
 {
   // Open file
   if(file_ali[0]=='\0')return(0);
@@ -1887,7 +1945,7 @@ int Get_sequences(struct Prot_input **Prot_input, int *Nali, char *file_ali,
 
   // Allocate and read sequences
   int l=0, i;
-  char chain[10], dumm[40], *s=NULL;
+  char chain[40], dumm[40], *s=NULL;
   //int LMAX=10000; char Seq[LMAX];
   *Prot_input=malloc(n*sizeof(struct Prot_input));
   n=-1; *Nali=0;
@@ -1896,33 +1954,31 @@ int Get_sequences(struct Prot_input **Prot_input, int *Nali, char *file_ali,
   while(fgets(string, sizeof(string), file_in)!=NULL){
     if(string[0]=='#')continue;
     /*if(strncmp(string,"PDBDIR",6)==0){
-      if(PDB_DIR[0]!='\0'){
-	printf("WARNING reading line %sPDB_DIR is already set to %s "
-	       "keeping it\n", string, PDB_DIR);
+      if(PDBDIR[0]!='\0'){
+	printf("WARNING reading line %sPDBDIR is already set to %s "
+	       "keeping it\n", string, PDBDIR);
       }else{
-	sscanf(string+7, "%s", PDB_DIR);
+	sscanf(string+7, "%s", PDBDIR);
       }
       continue;
       }*/
     if(string[0]=='>'){
       n++;
-      sscanf(string+1, "%s", (*Prot_input)[n].name);
-      if(string[5]=='_'){
+      (*Prot_input)[n].chain=' ';
+      (*Prot_input)[n].dir=0;
+      int c=sscanf(string+1, "%s%s", (*Prot_input)[n].name, chain);
+      char *name=(*Prot_input)[n].name;
+      int nc=0; char *ch=chain; while(*ch!='\0'){ch++; nc++;}
+      if(c>1 && nc==1 && (chain[0]!='\n')){
+	(*Prot_input)[n].chain=chain[0];
+      }else if( name[4]=='_' && name[5]!='\0' && name[6]=='\0'){
 	printf("Getting chain after _\n");
-	(*Prot_input)[n].name[4]='\0';
-	(*Prot_input)[n].chain=string[6];
-      }else if((string[5]>=65)&&(string[5]<=90)){ // Maiuscule
+	(*Prot_input)[n].chain=name[5];
+	//name[4]='\0';
+      }else if(name[4]!='\0' && name[4]!='_' && name[5]=='\0' ){
 	printf("Getting chain after character 4\n");
-	(*Prot_input)[n].name[4]='\0';
-	(*Prot_input)[n].chain=string[5];
-      }else{
-	for(i=0; i<10; i++)chain[i]='\0';
-	int c=sscanf(string, "%s%s\n", dumm, chain);
-	if((c>1)&&(chain[0]!='\0')&&(chain[0]!='\n')){
-	  (*Prot_input)[n].chain=chain[0];
-	}else{ 
-	  (*Prot_input)[n].chain=' ';
-	}
+	(*Prot_input)[n].chain=name[4];
+	//name[4]='\0';
       }
       if((*Prot_input)[n].chain=='\n' ||
 	 (*Prot_input)[n].chain=='\r'){
@@ -2015,9 +2071,9 @@ int Get_sequences(struct Prot_input **Prot_input, int *Nali, char *file_ali,
   n++;
   fclose(file_in);
 
-  /*if(PDB_DIR[0]=='\0'){
-    printf("WARNING , PDB_DIR not set, using current directory\n");
-    strcpy(PDB_DIR, "./");
+  /*if(PDBDIR[0]=='\0'){
+    printf("WARNING , PDBDIR not set, using current directory\n");
+    strcpy(PDBDIR, "./");
     }*/
 
   return(n);
@@ -2140,12 +2196,14 @@ void Write_identity(int type,
 
 
 void Get_file_name(char *name, char *file){
-  char *s=file, *last=NULL; 
-  while(*s!='\0'){if(*s=='.'){last=s;} s++;}
-  s=file; char *t=name;
+  char *s=file, *first=file, *last=NULL;
   while(*s!='\0'){
-    if(*s=='/'){s++; t=name;}
-    else if(s==last){break;}
+    if(*s=='/'){first=s+1;}else if(*s=='.'){last=s;}
+    s++;
+  }
+  if(last==NULL)last=s;
+  s=first; char *t=name;
+  while(s!=last && *s!='\0'){
     *t=*s; s++; t++;
   }
 }
@@ -2379,8 +2437,8 @@ void Get_input(char *file_ali, char *file_list, char *file_fun,
     }else if(strcmp(argv[i], "-out")==0){
       i++; sscanf(argv[i], "%s", name_in);
     }else if(strcmp(argv[i], "-pdbdir2")==0){
-      i++; sscanf(argv[i], "%s", PDB_DIR2);
-      printf("Directory for PDB files: %s\n", PDB_DIR2);
+      i++; sscanf(argv[i], "%s", PDBDIR2);
+      printf("Directory for PDB files: %s\n", PDBDIR2);
     }else if(strcmp(argv[i], "-pdbdir")==0){
       i++; sscanf(argv[i], "%s", PDB_DIR);
       printf("Directory for PDB files: %s\n", PDB_DIR);
@@ -2394,6 +2452,12 @@ void Get_input(char *file_ali, char *file_list, char *file_fun,
        *PRINT_PAIR=1;
        }else if(strcmp(argv[i], "-print_msa")==0){
        MAKE_MSA=1;*/
+    }else if(strcmp(argv[i], "-sim_thr")==0){
+      i++; sscanf(argv[i], "%f", &sim_thr);
+      if(sim_thr>1){
+	printf("ERROR in input, sim_thr must be <= 1\n");
+	exit(8);
+      }
     }else if(strcmp(argv[i], "-print_pdb")==0){
       PRINT_PDB=1;
     }else if(strcmp(argv[i], "-print_sim")==0){
@@ -2402,8 +2466,8 @@ void Get_input(char *file_ali, char *file_list, char *file_fun,
       *PRINT_CV=1;
     }else if(strcmp(argv[i], "-print_id")==0){
       PRINT_ID=1;
-    }else if(strcmp(argv[i], "-print_div_all")==0){
-      PRINT_DIV_ALL=1;
+      //}else if(strcmp(argv[i], "-print_div_all")==0){
+      //PRINT_DIV_ALL=1;
     }else if(strcmp(argv[i], "-print_div")==0){
       *PRINT_DIV=1;
     }else if(strcmp(argv[i], "-ali_tm")==0){
@@ -3377,11 +3441,13 @@ FILE *Open_file_sim(char *name_sim, char *name_in, char *head, float **fun_sim)
   fprintf(file_sim,
 	  " %d=nali_PC %d=SI_PC %d=CO_PC %d=TM_PC %d=PC_PC",
 	  k, k+1, k+2, k+3, k+4);
-  if(fun_sim)fprintf(file_sim, "  Function_similarity");
+  fprintf(file_sim, " %d=RMSD_PC", k+5);
+  if(fun_sim)fprintf(file_sim, " %d=Function_similarity", k+6);
   fprintf(file_sim,"\n");
   fprintf(file_sim, "### 0 0");
   if(INP_MSA)fprintf(file_sim, "  1 1 1 1 0");
-  fprintf(file_sim, "  0 0 0 0 0");
+  fprintf(file_sim, "  1 1 1 1 1");
+  fprintf(file_sim, " 1");
   if(fun_sim)fprintf(file_sim, " 0");
   fprintf(file_sim,"\n");
   return(file_sim);

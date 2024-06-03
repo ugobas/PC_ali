@@ -6,5 +6,4 @@ struct treenode{
 struct treenode *Neighbor_Joining(float **div, int n);
 int ***Build_outgroups(int ***N_out, struct treenode *node, int n);
 int ***Outgroups_NJ(int ***N_out, float **div, int n);
-int Single_linkage(int ***elements, int **n_ele, int **clus,
-		   float **diff, int n, float thr);
+int Single_linkage(int ***elements, int **n_ele,float **diff, int n, float thr);

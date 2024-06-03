@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-int Write_cluster(int **elements, int *clus, int n_clus,
+int Write_cluster(int **elements, int n_clus,
 		  int *cluster, int n, float **div, int ini);
 
 
@@ -78,8 +78,7 @@ int ***Outgroups_NJ(int ***N_out, float **div, int n)
   return(outgroup);
 }
 
-int Single_linkage(int ***elements, int **n_ele, int **clus,
-		   float **div, int n, float thr)
+int Single_linkage(int ***elements, int **n_ele, float **div, int n, float thr)
 {
   // Make single linkage from the point of view of elements
   int nclus=n,  cluster[n], i;
@@ -100,18 +99,16 @@ int Single_linkage(int ***elements, int **n_ele, int **clus,
       }
     }
   }
-  //  returned: clus[i], nclus
+  //  returned: nclus
 
   // Store properties of the clusters
   *n_ele=malloc(nclus*sizeof(int));      // Number of elements in a cluster
   *elements=malloc(nclus*sizeof(int *)); // List of cluster elements
-  *clus=malloc(n*sizeof(int));           // Cluster index of element i
-  for(i=0; i<n; i++)(*clus)[i]=-1;
   int n_clus=0;
   for(i=0; i<n; i++){
     if(cluster[i]>=0){
       (*n_ele)[n_clus]=
-	Write_cluster(*elements+n_clus, *clus, n_clus, cluster, n, div, i);
+	Write_cluster(*elements+n_clus, n_clus, cluster, n, div, i);
       n_clus++;
     }
   }
@@ -119,43 +116,29 @@ int Single_linkage(int ***elements, int **n_ele, int **clus,
     printf("ERROR in Single_likage, wrong number of clusters %d exp. %d\n",
 	   n_clus, nclus); exit(8);
   }
-  for(i=0; i<n; i++){
-    if(((*clus)[i]<0)||((*clus)[i]>=n_clus)){
-      printf("ERROR in cluster index\n"); exit(8);
-    }
-  }
 
   printf("%d elements joined into %d clusters with threshold %.2g\n",
 	   n, n_clus, thr);
   return(n_clus);
 }
 
-int Write_cluster(int **elements, int *clus, int n_clus,
+int Write_cluster(int **elements, int n_clus,
 		  int *cluster, int n, float **div, int ini)
 {
   // Write cluster
   int new=cluster[ini]; // label of cluster
   int m=0; // index of element in cluster
-  int c_ele[n], j; float d_sum[n];
+  int c_ele[n], j;
   for(j=ini; j<n; j++){
     if(cluster[j]==new){
-      clus[j]=n_clus;
       cluster[j]=-1;
       c_ele[m]=j;
-      d_sum[m]=0;
-      for(int k=0; k<m; k++){
-	int l=c_ele[k];
-	d_sum[m]+=div[j][l];
-	d_sum[k]+=div[j][l];
-      }
       m++;
     }
   }
   (*elements)=malloc(m*sizeof(int));
-  float d_min=d_sum[0];
   for(j=0; j<m; j++){
     (*elements)[j]=c_ele[j];
-    if(d_sum[j]<d_min){d_min=d_sum[j];}
   }
   return(m);
 }

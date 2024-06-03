@@ -43,23 +43,37 @@ int Read_PDB_compress(struct protein **prot,
 		      char *PDB_PATH, char *PDB_EXT)
 {
   int L; char filename[200], name[100];
-  sprintf(name, "%s%s", pdbid, PDB_EXT);
-  sprintf(filename,"%s%s", PDB_PATH, name);
-  FILE *file_in=fopen(filename, "r");
-  if(file_in==NULL){
-    sprintf(name, "%s%s%s", pdbid, chain, PDB_EXT);
-    sprintf(filename,"%s%s", PDB_PATH, name);
-    file_in=fopen(filename, "r");
-    if(file_in==NULL){
-      printf("WARNING, neither %s nor %s%s%s exist\n",
-	     filename, PDB_PATH, pdbid, PDB_EXT);
-      return(0);
+  strcpy(name, pdbid);
+  FILE *file_in=NULL;
+  for(int i=0; i<4; i++){
+    if(i==0){
+      sprintf(filename,"%s%s%s", PDB_PATH, name, PDB_EXT);
+    }else if(i==1){
+      sprintf(filename,"%s%s", PDB_PATH, name); // Try without extension
+    }else if(i==2){
+      if(name[4]=='_'){ // Try without chain
+	name[4]='\0';
+      }else{
+	sprintf(name, "%s%s", name, chain);
+      }
+      sprintf(filename,"%s%s%s", PDB_PATH, name, PDB_EXT);
+    }else if(i==3){
+      sprintf(filename,"%s%s", PDB_PATH, name); // Try without extension
     }
-  }
-  if(file_in)fclose(file_in);
-  //printf("Reading %s\n", filename);
+    file_in=fopen(filename, "r");
+    if(file_in){break;}
+    printf("WARNING, %s not found\n", filename);
 
-  strcpy((*prot)->name_file, pdbid);
+  }
+  if(file_in==NULL){
+    printf("%s not found in %s, exiting\n", pdbid, PDB_PATH);
+    return(0);
+  }else{
+    fclose(file_in);
+  }
+  printf("Reading %s\n", filename);
+
+  strcpy((*prot)->name_file, name);
   if(Get_compression(filename)==0){
     //printf("Reading pdb: %s chain %c in uncompressed format into %x\n",
     //	   filename, *chain, *prot);

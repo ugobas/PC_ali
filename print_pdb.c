@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #define AA3 "ALA GLU GLN ASP ASN LEU GLY LYS SER VAL ARG THR PRO ILE MET PHE TYR CYS TRP HIS "
 #define AA1 "AEQDNLGKSVRTPIMFYCWH"
 
@@ -63,4 +64,32 @@ void Name3(char *aaname3, char aa1){
   if(a==20){printf("WARNING, aa %c not found\n", aa1); a=0;}
   a*=4; for(int j=0; j<3; j++){aaname3[j]=AA3[a]; a++;}
   aaname3[3]='\0';
+}
+
+float Compute_RMSD(struct protein **prot_p, int ci, int cj,
+		   int **msa, int L_msa)
+{
+  float *xca_i=prot_p[ci]->xca_rot;
+  float *xca_j=prot_p[cj]->xca_rot;
+  int Li=prot_p[ci]->len;
+  int Lj=prot_p[cj]->len;
+  int lmin=Li; if(Lj<lmin)lmin=Lj;
+
+  float TM_coeff=1.24, TM_offset=1.8, L_offset=15;
+  float d02=TM_coeff*pow(lmin-L_offset, 1./3)-TM_offset; //lmin
+  if(d02<=0)return(0);
+  d02*=d02;
+  int n=0; float rmsd=0;
+  for(int k=0; k<L_msa; k++){
+    int ki=msa[ci][k], kj=msa[cj][k];
+    if(ki<0 || kj<0)continue;
+    float *x1=xca_i+3*ki, *x2=xca_j+3*kj;
+    float dx=x1[0]-x2[0], dy=x1[1]-x2[1], dz=x1[2]-x2[2];
+    float dd=dx*dx+dy*dy+dz*dz;
+    if(dd>d02)continue; // Compute only for well superimposed
+    rmsd+=dd;
+    n++;
+  }
+  if(n)rmsd/=n;
+  return(sqrt(rmsd));
 }
