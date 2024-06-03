@@ -85,7 +85,7 @@ They are printed in <>.prot.div for all pairs of protein sequences, and also for
 PC_ali -seq 50044_Mammoth.aln -pdbdir <PDBPATH>
 (all PDB files named in 50044_Mammoth.aln must be in <PDBPATH>)
 
-# OUTPUT:
+## OUTPUT:
 MSA (PCAli.fas),
 NJ tree (PCAli.tree), 
 structure similarity (.sim) and structure divergence scores (.div) for each protein pair,
