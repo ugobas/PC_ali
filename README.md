@@ -19,7 +19,7 @@ In case 1, the PDB files may be stored in two different folders. Folder 1 is inp
 It is not allowed to input both a list of PDB files and an MSA.
 
 Usage:
-PC_ali   -pdblist <List of PDB files> Format: 1 file_name 2 chain 3 dir 
+PC_ali  -pdblist <List of PDB files> Format: 1 file_name 2 chain 3 dir 
         -seq <sequences in FASTA format, with names of PDB files>
 	-ali <MSA file in FASTA format, with names of PDB files>
 	# The pdb code is optionally followed by the chain index
@@ -30,17 +30,18 @@ PC_ali   -pdblist <List of PDB files> Format: 1 file_name 2 chain 3 dir
 	 -pdbext <extension of pdb files>  (default: .pdb)
 #### Optional parameters:
 	 -out <Name of output files> (default: alignment file)
+         -sim_thr    <identity above which proteins are joined>
+	 -print_pdb    ! Print structure superimposition in PDB format
+	 -print_sim    ! Print similarity measures
+	 -print_div    ! Print divergence measures
+	 -print_cv     ! Print clock violations
+	 -func <file with function similarity for pairs of proteins>
   	 -clique     ! Initial alignment is based on cliques (may be slow)
 	 -ali_tm     ! Perform pairwise alignments that target TM score
 	 -ali_co     ! Perform pairwise alignments that target Contact Overlap
 	 -ali_ss     ! Perform alignments that target sec.structure
 	 -ss_mult    ! alignments that target sec.structure are MSA
 	 -shift_max <Maximum shift for targeting sec.str.>
-	 -print_pdb    ! Print structure superimposition in PDB format
-	 -print_sim    ! Print similarity measures
-	 -print_div    ! Print divergence measures
-	 -print_cv     ! Print clock violations
-	 -func <file with function similarity for pairs of proteins>
 
 Computed similarity measures:
 (1) Aligned fraction ali,
@@ -64,20 +65,14 @@ Flux of the program:
 mputing the shared contacts and the distance after optimal superimposition (maximizing the TM score) for all pairs of residues and obtaining a new alignments. Two ite
 rations are usually enough for getting good results. Optionally, for the sake of comparison, the program can target the TM score (-ali_tm), the Contact Overlap (-ali_
 co) and the secondary structure superposition (-ali_ss).
-(3) Then, the program builds the multiple alignment based on the maximal cliques of the pairwise alignments. This computation does not require neither a guide tree no
-r gap penalty parameters and in most cases it is faster than the progressive multiple alignment.
-(4) Finally, the program runs iteratively progressive multiple alignments using as guide tree the average linkage tree obtained with the PC_Div divergence measure of 
-the previous step and using as starting alignment the previous multiple alignment. The best MSA is selected as the one with the maximum value of the average PC simila
-rity score.
-(5) The program prints the optimal MSA and the Neighbor Joining tree obtained from the corresponding PC_Div divergence measure.
-(6) Optionally, if -print_pdb is set, the program prints the multiple superimposition obtained by maximizing the TM score.
-(7) Furthermore, if -print_cv is set, the program computes and prints for all four divergence measures the violations of the molecular clock averaged over all possibl
-e outgroups identified with the Neighbor-Joining criterion, and the corresponding significance score.
+(3) Proteins with sequence identity > sim_thr are joined together, to accelerate computations and reduce the output size. They represent different conformations of the same protein. The structural similarity (divergence) between two proteins is computed as the maximum (minimum) across all the examined conformations. The clustering can be avoided by setting -sim_thr 1
+(4) Then, the program builds progressive multiple alignments. If the option -clique is set, the starting MSA is based on the maximal cliques of the pairwise alignments, which does not require neither a guide tree nor gap penalty parameters, however it can become slow for large data sets.
+(5) Finally, the program runs iteratively progressive multiple alignments using as guide tree the average linkage tree obtained with the PC_Div divergence measure of the previous step and using as starting alignment the previous multiple alignment. The best MSA is selected as the one with the maximum value of the average PC similarity score.
+(6) The program prints the optimal MSA and the Neighbor Joining tree obtained from the corresponding PC_Div divergence measure.
+(7) If the options -print_sim or -print_div are set, the program prints in files <>.prot.sim and <>.prot.div similarity and divergence scores for the input MSA (if present) and for the final MSA.
+(8) If -print_pdb is set, the program prints the multiple superimposition obtained by maximizing the TM score
+(9) Furthermore, if -print_cv is set, the program computes and prints for all four divergence measures the violations of the molecular clock averaged over all possible outgroups identified with the Neighbor-Joining criterion, and the corresponding significance score.
 
-In the first pairwise phase, the program computes similarity and divergence scores for all pairs of protein structures. It then clusters all conformations of the same
- protein and computes the structural similarity (divergence) between two proteins as the maximum (minimum) across all the examined conformations.
-The similarity and divergence scores are computed for the starting alignment, for the modified pairwise alignments that target different similarity scores (TM score, 
-contact overlap and PC_sim) and for the best multiple alignment.
 
 COMPILE:
 >unzip PC_ali.zip
