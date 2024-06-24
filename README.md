@@ -6,9 +6,7 @@ Email: <ubastolla@cbm.csic.es>
 
 (It includes a modified version of the needlemanwunsch aligner programmed by Dr. Andrew C. R. Martin in the Profit suite of programs, (c) SciTech Software 1993-2007)
 
-PC_ali performs hybrid multiple structure and sequence alignments based on the structure+sequence similarity score PC_sim. Besides the MSA, it outputs pairwise simila
-rity scores and divergence scores and neighbor-joining phylogenetic tree obtained with the hybrid evolutionary divergence measure based on PC_sim, and it outputs a pd
-b file with multiply superimposed structures. Optionally, it computes violations of the molecular clock for each pair of proteins.
+PC_ali performs hybrid multiple structure and sequence alignments based on the structure+sequence similarity score PC_sim. Besides the MSA, it outputs pairwise similarity scores and divergence scores and neighbor-joining phylogenetic tree obtained with the hybrid evolutionary divergence measure based on PC_sim, and it outputs a pdb file with multiply superimposed structures. Optionally, it computes violations of the molecular clock for each pair of proteins.
 
 PC_ali takes as input:
 1) either a list of PDB files (option -pdblist, format: column1 filename col2 chain col3 directory 1 or 2 where the file is stored), or
@@ -19,8 +17,8 @@ In case 1, the PDB files may be stored in two different folders. Folder 1 is inp
 It is not allowed to input both a list of PDB files and an MSA.
 
 ## Usage:
-PC_ali  -pdblist <List of PDB files> Format: 1 file_name 2 chain 3 dir 
-        -seq <sequences in FASTA format, with names of PDB files>
+PC_ali  -pdblist <List of PDB files> Format: 1 file_name 2 chain 3 dir
+	-seq <sequences in FASTA format, with names of PDB files>
 	-ali <MSA file in FASTA format, with names of PDB files>
 	# The pdb code is optionally followed by the chain index
 	# Ex: >1opd.pdb A or >1opdA or >1opd_A
