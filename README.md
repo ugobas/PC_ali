@@ -18,10 +18,12 @@ It is not allowed to input both a list of PDB files and an MSA.
 
 ## Usage:
 PC_ali  
+
 	-pdblist <List of PDB files> Format: 1 file_name 2 chain 3 dir
 	-seq <sequences in FASTA format, with names of PDB files>
 	-ali <MSA file in FASTA format, with names of PDB files>
 	# The pdb code is optionally followed by the chain index, e.g. >1opd.pdb A or >1opdA or >1opd_A
+
 	-pbdir <folder of pdb files>  (default: current directory)
  	-pbdir2 <2nd folder of pdb files>  (default: current directory)
   	-pdbext <extension of pdb files>  (default: .pdb)
