@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <ctype.h>
+
 #define SEC_STR_MAX 500      // Max number of sec. str.elements
 #define MAXRES 10000
 #define MAXATOM 100
@@ -17,9 +19,18 @@
 //char AA_Blosum[22]= "ARNDCQEGHILKMFPSTWYVX*";
 //char SS_code[]=" HE-";
 
+// Modified residues
+#define NEXO 400
+  int n_exo=0;
+char *res_exo[NEXO], *res_std[NEXO];
+
+int Read_modres(char **res_exo, char **res_std, char *string, int *n_exo);
+char Het_res(char *res_type_old, char **res_exo, char **res_std, int n_exo);
 int Code_AA(char res);
 int Code_AA_2(char aseq, char *aacode, int n);
+int Get_number(char *pdbres);
 char Get_aaname(char *aaname);
+char Code_3_1(char *res);
 void Set_prot_name(char *name, char *filename, char chain);
 int Write_protein(struct protein *prot, struct residue *res, int nres,
 		  char *filename, char chain_to_read, char exp_meth);
@@ -35,6 +46,10 @@ static int Read_sec_str(struct secondary *sec_ele, int *N_sec_ele,
 static void Copy_word(char *word, char *origin, int ini, int end);
 static int Secondary_structure(short *ss3, int N_res, char chain, char **pdbres,
 			       struct secondary *sec_ele, int N_sec_ele);
+static short *Read_seqres(struct protein *prot, int nres,
+			  char *filename, char chain_to_read);
+static void Get_seqres(char *string, char *seqres, int *n_seqres);
+
 int Ini_Modres=0;
 void Modres();
 char *modres[20];
@@ -75,6 +90,8 @@ int Read_pdb(char *filename, struct protein **prot, char *chain_to_read)
     }else if(strncmp(string, "HETATM", 6)==0){
       // Cofactor or exotic residue
       het=1;
+    }else if(strncmp(string,"MODRES", 6)==0){
+      Read_modres(res_exo, res_std, string, &n_exo);
     }else if((strncmp(string,"TER",3)==0)&&(nres>0)&&(*chain_to_read!='*')){
       break;
     }else if(strncmp(string, "ENDMDL", 6)==0){
@@ -159,7 +176,12 @@ int Read_pdb(char *filename, struct protein **prot, char *chain_to_read)
       n_atom=0;
       if(res_i->atom==NULL)
 	res_i->atom=malloc(MAXATOM*sizeof(struct atom));
-      res_i->aa=Get_aaname(string+17);
+
+      //res_i->aa=Get_aaname(string+17);
+      char *s3=string+17;
+      res_i->aa=Code_3_1(s3);
+      if(res_i->aa=='X')res_i->aa=Het_res(s3, res_exo, res_std, n_exo);
+
       strcpy(res_i->label, res_label);
       // Store
       strcpy(res_old, res_label);
@@ -210,7 +232,7 @@ int Write_protein(struct protein *prot, struct residue *res, int nres,
   for(i=0; i<nres; i++)natoms+=res[i].n_atom;
   prot->natoms=natoms;
 
-  Set_prot_name(prot->name, filename, chain_to_read);
+  //Set_prot_name(prot->code, filename, chain_to_read);
   prot->exp_meth=exp_meth;
   //prot->ss=malloc(nres*sizeof(char));
   prot->ss3= malloc(nres*sizeof(short));
@@ -259,9 +281,289 @@ int Write_protein(struct protein *prot, struct residue *res, int nres,
   }
   if(prot->vec)Set_CA_vectors(prot);
   //if(ASSIGN_SS)Assign_ss(prots+i_prot)
+  prot->seqres=Read_seqres(prot, nres, filename, chain_to_read);
+
 
   return(0);
 }
+
+short *Read_seqres(struct protein *prot, int nres,
+		   char *filename, char chain_to_read)
+{
+  FILE *file_in=fopen(filename, "r");
+  if(file_in==NULL){
+    printf("ERROR, file %s does not exist, exiting\n", filename);
+    return(NULL);
+  }
+  printf("Reading seqres in PDB: %s\n",filename);
+  short *seqres=malloc(nres*sizeof(short));
+  char *seq3=NULL, string[300];
+  int n_seqres=0, n=0, ndis=0;
+  int dismax=nres, res_dis[dismax]; char aa_dis[dismax];
+
+  while(fgets(string, sizeof(string), file_in)!=NULL){
+    if(strncmp(string, "SEQRES", 6)==0){
+      //SEQRES   1 A  334  MET GLY SER ASP LYS ILE HIS HIS HIS HIS HIS HIS GLU
+      char chain=string[11];
+      if(chain==chain_to_read){
+	if(n_seqres==0){
+	  sscanf(string+12, "%d", &n_seqres);
+	  seq3=malloc(3*n_seqres*sizeof(char));
+	}
+	Get_seqres(string, seq3, &n);
+      }
+    }else if(strncmp(string, "REMARK 465", 10)==0){
+      /* REMARK 465   M RES C SSSEQI
+	 REMARK 465     MET A   -19 */
+      if(string[19]==chain_to_read && string[13]!='M'){
+	if(ndis>=dismax){
+	  printf("WARNING, too many disordered residues (>%d) Just read:\n",
+		 dismax, string); continue;
+	}
+	sscanf(string+23, "%d", res_dis+ndis);
+	aa_dis[ndis]=Code_3_1(string+15);
+	ndis++;
+      }
+    }else if(strncmp(string, "ATOM", 4)==0){
+       break;
+    }
+  }
+  fclose(file_in);
+
+  // The SEQRES record was not found, copy from ATOM
+  if(n_seqres==0){
+    printf("WARNING, the SEQRES record is not present in %s\n", filename);
+    printf("I will copy it from the ATOM record (%d res) omitting "
+	   "%d disordered residues\n", nres, ndis);
+    n_seqres=nres+ndis;
+    char *seqr=malloc(n_seqres*sizeof(char));
+    int delta=0, ini=1, first_str=0, i;
+    for(i=0; i<n_seqres; i++){seqr[i]='X';}
+    for(i=0; i<nres; i++){
+      int r=Get_number(prot->pdbres[i]);
+      if(ini){
+	for(int j=0; j<ndis; j++){
+	  if(r>res_dis[j])break;
+	  first_str++;
+	}
+	delta=first_str+1-r; ini=0;
+      }
+      seqres[i]=r+delta;
+      if(seqres[i]>n_seqres){
+	printf("WARNING, too many residues: "
+	       "n_seqres=%d nres=%d ndis=%d delta=%d seqres=%d\n",
+	       n_seqres, nres, ndis, delta, seqres[i]);
+	exit(8);
+	seqres[i]=n_seqres;
+      }
+      seqres[seqres[i]-1]=prot->aseq[i];
+    }
+    prot->seqr=seqr;
+    return(seqres);
+  }
+
+  // The SEQRES record was found
+  int error=0;
+  printf("%d SEQRES residues %d structured, %d disordered found in %s\n",
+	 n_seqres, nres, ndis, filename);
+  if(n!=n_seqres){
+    printf("ERROR reading SEQRES of chain %c, nres=%d expected %d\n",
+	   chain_to_read, n, n_seqres); error=1;
+  }
+  // Get aa of SEQRES in 1 letter code
+  char *seqr=malloc(n_seqres*sizeof(char)),*s1=seqr, *s3=seq3, n_mod=0;
+  for(int k=0; k<n_seqres; k++){
+    *s1=Code_3_1(s3);
+    if(*s1=='X'){
+      *s1=Het_res(s3, res_exo, res_std, n_exo); n_mod++;
+    }
+    printf("%c", *s1);
+    s1++; s3+=3;
+  }
+  if(n_mod)printf(" %d modified residues", n_mod);
+  printf("\n");
+  if(error)exit(8);
+
+  int first_str=0, delta=0, found=0, i;
+  for(i=0; i<n_seqres; i++){
+    if(seqr[i]==prot->aseq[0] &&
+       seqr[i+1]==prot->aseq[1] && 
+       seqr[i+2]==prot->aseq[2]){
+      int r=Get_number(prot->pdbres[0]);
+      first_str=i; found=1;
+      delta=first_str-r;
+      break;
+    } 
+  }
+  if(found==0){
+    printf("WARNING, first structured residue not found "
+	   "first structured triplet: %c%c%c\n",
+	   prot->aseq[0],prot->aseq[1],prot->aseq[2]);
+  }else{
+    printf("First structured residues: %c%d %c%d %c%d\n",
+	   prot->aseq[0],delta,prot->aseq[1],delta+1,prot->aseq[2],delta+2);
+  }
+
+  for(i=0; i<nres; i++){
+    int r=Get_number(prot->pdbres[i]);
+    seqres[i]=r+delta;
+    if(seqres[i]>n_seqres){
+	printf("WARNING, too many residues: "
+	       "n_seqres=%d nres=%d delta=%d seqres=%d i=%d\n",
+	       n_seqres, nres, delta, seqres[i], i);
+	exit(8);
+	seqres[i]=n_seqres;
+      }
+  }
+
+  prot->seqr=seqr;
+  return(seqres);
+}
+
+void Get_seqres(char *string, char *seq3, int *n_seqres)
+{
+  char *ptr=string+19; 
+  /* If amino acid chain, aa=1 */
+  char *seq=seq3+3*(*n_seqres);
+  for(int k=0; k<13; k++){
+    for(int j=0; j<3; j++){*seq=*ptr; seq++; ptr++;}
+    (*n_seqres)++; ptr++; if(*ptr==' ')return;
+  }
+}
+
+int Read_modres(char **res_exo, char **res_std, char *string, int *n_exo)
+{
+  for(int j=0; j<*n_exo; j++){
+    if(strncmp(res_exo[j], string+12, 3)==0)return(0);
+  }
+  res_exo[*n_exo]=malloc(3*sizeof(char));
+  res_std[*n_exo]=malloc(3*sizeof(char));
+  res_exo[*n_exo][0]=string[12]; res_std[*n_exo][0]=string[24];
+  res_exo[*n_exo][1]=string[13]; res_std[*n_exo][1]=string[25];
+  res_exo[*n_exo][2]=string[14]; res_std[*n_exo][2]=string[26];
+
+  (*n_exo)++; return(0);
+} 
+
+
+char Het_res(char *res_type_old, char **res_exo, char **res_std, int n_exo)
+{
+  for(int i=n_exo-1; i>=0; i--){
+      if(strncmp(res_type_old,res_exo[i],3)==0){
+	return(Code_3_1(res_std[i]));
+      }
+  }
+  return('X');
+}
+
+char Code_3_1(char *res){
+
+  if(strncmp(res,"ALA",3)==0){return('A');
+  }else if(strncmp(res,"GLU",3)==0){return('E');
+  }else if(strncmp(res,"GLN",3)==0){return('Q');
+  }else if(strncmp(res,"ASP",3)==0){return('D');
+  }else if(strncmp(res,"ASN",3)==0){return('N');
+  }else if(strncmp(res,"LEU",3)==0){return('L');
+  }else if(strncmp(res,"GLY",3)==0){return('G');
+  }else if(strncmp(res,"LYS",3)==0){return('K');
+  }else if(strncmp(res,"SER",3)==0){return('S');
+  }else if(strncmp(res,"VAL",3)==0){return('V');
+  }else if(strncmp(res,"ARG",3)==0){return('R');
+  }else if(strncmp(res,"THR",3)==0){return('T');
+  }else if(strncmp(res,"PRO",3)==0){return('P');
+  }else if(strncmp(res,"ILE",3)==0){return('I');
+  }else if(strncmp(res,"MET",3)==0){return('M');
+  }else if(strncmp(res,"PHE",3)==0){return('F');
+  }else if(strncmp(res,"TYR",3)==0){return('Y');
+  }else if(strncmp(res,"CYS",3)==0){return('C');
+  }else if(strncmp(res,"TRP",3)==0){return('W');
+  }else if(strncmp(res,"HIS",3)==0){return('H');
+  }else if(strncmp(res,"HIE",3)==0){return('H');
+  }else if(strncmp(res,"HID",3)==0){return('H');
+  }else if(strncmp(res,"HIP",3)==0){return('H');
+  }else if(strncmp(res,"ASX",3)==0){return('N');
+  }else if(strncmp(res,"GLX",3)==0){return('Q');
+  }else{
+    printf("WARNING, a.a. %c%c%c not known\n", *res,*(res+1),*(res+2));
+    return('X');
+  }
+}
+
+int Get_number(char *pdbres){
+  // Find number associated to pdbres
+  int r, ic=0;
+  char res[10], *cr=res; strcpy(res, pdbres);
+  while(*cr!='\0' && ic<9){
+    if(isdigit(*cr)==0){*cr=' '; break;} cr++; ic++;
+  }
+  *cr=' ';
+  sscanf(res, "%d", &r);
+  return(r);
+}
+
+int Select_domain(struct protein *prot, 
+		  int *ini_frag, int *end_frag, int nfrag)
+{
+  /* The numbering of cath domains seem to be based on SEQRES, not on
+     the RES record in PDB nor on structured residues.
+     Ex: 4zi8 A 227-334 SEQRES: 1-334 RES: -19-314 Str: 2-314  */
+  int Lsel=0;
+  printf("Selecting %d fragments:", nfrag);
+  for(int i=0; i<nfrag; i++){
+    printf(" %d-%d", ini_frag[i], end_frag[i]);
+    Lsel+=end_frag[i]-ini_frag[i]+1;
+  }
+  printf(" Total: %d\n", Lsel);
+
+  int L=prot->len, select[L], i, sel=0;
+  for(i=0; i<L; i++)select[i]=0;
+
+  for(i=0; i<L; i++){
+    int r=prot->seqres[i]; //i+1;
+    if(0){
+      r=Get_number(prot->pdbres[i]);
+    }
+    for(int k=0; k<nfrag; k++){
+      if(r>=ini_frag[k] && r<=end_frag[k]){select[i]=1; sel++; break;}
+    }
+  }
+  //printf("Selecting %d residues out of %d in %d fragments\n", sel,L,nfrag);
+  if(sel<Lsel){
+    printf("WARNING, %d residues found in domain, expected %d\n", sel, Lsel);
+    int tol=Lsel/3; if(sel<Lsel-tol){printf("EXITING\n"); exit(8);}
+  }
+
+  sel=0;
+  float *xca_rot=prot->xca_rot;
+  for(i=0; i<L; i++){
+    if(select[i]==0){continue;}
+    if(i==sel){sel++; continue;}
+    // copy i to sel
+    float *xca_old=prot->xca_rot+3*i;
+    *(xca_rot)=*(xca_old); xca_rot++; xca_old++;
+    *(xca_rot)=*(xca_old); xca_rot++; xca_old++;
+    *(xca_rot)=*(xca_old); xca_rot++; xca_old++;
+    prot->aseq[sel]=prot->aseq[i];
+    prot->n_atom[sel]=prot->n_atom[i];
+    strcpy(prot->pdbres[sel], prot->pdbres[i]);
+    prot->seqres[sel]=prot->seqres[i];
+    if(prot->seq1)prot->seq1[sel]=prot->seq1[i];
+    if(prot->seq_bs)prot->seq_bs[sel]=prot->seq_bs[i];
+    prot->res_atom[sel]=prot->res_atom[i];
+    int s3=3*sel, i3=3*i;
+    if(prot->vec){
+      prot->vec[s3]=prot->vec[i3]; s3++; i3++;
+      prot->vec[s3]=prot->vec[i3]; s3++; i3++;
+      prot->vec[s3]=prot->vec[i3];
+    }
+    sel++;
+  }
+  printf("Selecting %d residues out of %d in %d fragments\n", sel,L,nfrag);
+  prot->nca=sel;
+  prot->len=sel;
+  return(sel);
+}
+
 
 int Copy_CA(struct atom *atom_first, float *xca, int n_atom)
 {

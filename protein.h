@@ -19,7 +19,9 @@ struct protein{
   int nca;
   int natoms;
   char name_file[20];
-  char name[30];
+  char code[30];
+  char domname[40];
+  char domain[40];
   char chain;
   //char *ss;
   char *aseq;
@@ -29,6 +31,8 @@ struct protein{
   short *n_atom;  // Number of atoms per residue
   float *max_sim; // Sim. score of id. prot. 0=ali 1=blosum 2=ss 3=TM 4=cont
   char **pdbres;
+  short *seqres; // Numbering according to seqres
+  char *seqr;     // One-letter code for seqres residues
   float *xca_rot; // alpha carbon coordinates in optimal superimposition
   float **vec;
   struct atom **res_atom;

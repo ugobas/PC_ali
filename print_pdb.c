@@ -26,7 +26,7 @@ void Print_pdb(char *name_in, struct protein **prot_p, int n)
     struct protein *prot=prot_p[ip];
     char chain=prot->chain;
     int L=prot->len;
-    fprintf(file_out, "MODEL %d %s L=%d\n", i+1, prot->name, L);
+    fprintf(file_out, "MODEL %d %s L=%d\n", i+1, prot->domname, L);
     float xca_pdb[3*L], *xca=xca_pdb, w[L]; int nca=0;
     for(int i=0; i<L; i++){
       if(Copy_CA(prot->res_atom[i], xca, prot->n_atom[i])==0){

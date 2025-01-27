@@ -641,7 +641,7 @@ void Set_scores(struct protein *prot)
   if(error || isnan(sum_seq) || isnan(sum_ss) || sum_seq<=0 || sum_ss<=0){
     printf("ERROR Protein %s L=%d %d errors in seq or secstr, "
 	   "<seq_sim>= %.3g <sec_str_sim>= %.3g. Exiting\n",
-	   prot->name, prot->len, error,
+	   prot->domname, prot->len, error,
 	   sum_seq/(float)L, sum_ss/(float)L);
     exit(8);
   }

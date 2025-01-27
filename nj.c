@@ -64,8 +64,8 @@ int NJ_align(int **msa, int *N_ali_max,
     if(a<n){
       node->nson=1;
       node->sons=malloc(1*sizeof(int)); node->sons[0]=a;
-      node->name=(char *)malloc(sizeof(prot_p[a]->name));
-      strcpy(node->name, prot_p[a]->name);
+      node->name=(char *)malloc(sizeof(prot_p[a]->domname));
+      strcpy(node->name, prot_p[a]->domname);
     }else{
       node->nson=0; node->sons=NULL; node->name=NULL;
     }
@@ -181,14 +181,17 @@ int NJ_align(int **msa, int *N_ali_max,
   } // end clustering
 
   // Write the tree in Newick format
-  char nametree[100]; sprintf(nametree, "%s.tree", name_out);
-  printf("Writing rooted tree in Newick format in %s\n", nametree);
-  FILE *file_out=fopen(nametree, "w");
-  fprintf(file_out, "%s\n", mnode->name);
-  fclose(file_out);
-    // Write the unrooted tree
+  char nametree[100]; FILE *file_out;
+  if(0){
+    sprintf(nametree, "%s.rooted.tree", name_out);
+    printf("Writing rooted tree in Newick format in %s\n", nametree);
+    file_out=fopen(nametree, "w");
+    fprintf(file_out, "%s\n", mnode->name);
+    fclose(file_out);
+  }
+  // Write the unrooted tree
   if(umnode){
-    sprintf(nametree, "%s.unroot.tree", name_out);
+    sprintf(nametree, "%s.tree", name_out);
     printf("Writing unrooted tree in Newick format in %s\n", nametree);
     file_out=fopen(nametree, "w");
     fprintf(file_out, "%s\n", umnode);

@@ -71,7 +71,7 @@ int Read_PDB_compress(struct protein **prot,
   }else{
     fclose(file_in);
   }
-  printf("Reading %s\n", filename);
+  //printf("Reading %s\n", filename);
 
   strcpy((*prot)->name_file, name);
   if(Get_compression(filename)==0){
@@ -150,10 +150,10 @@ int Read_pdb_names(struct protein **prots, char *PDB_PATH, char *file_name)
     }
     chain[0]='\0';
     sscanf(string, "%s %s", prot->name_file, chain);
-    Get_pdbid(prot->name, prot->name_file, chain);
+    Get_pdbid(prot->code, prot->name_file, chain);
     prot->chain=chain[0];
     printf("file=%s PDBID= %s chain=%c\n",
-	   prot->name_file, prot->name, prot->chain);
+	   prot->name_file, prot->code, prot->chain);
     n++; prot++;
   }
   fclose(file_in);
@@ -204,7 +204,7 @@ int Print_proteins(struct protein *prots, int N_prot,
   // Print sequence
   for(i=0; i<N_prot; i++){
     if((prots[i].len==0)||(prots[i].Cont_map==NULL))continue;
-    fprintf(file_out, "# %s %d\n", prots[i].name, prots[i].len);
+    fprintf(file_out, "# %s %d\n", prots[i].domname, prots[i].len);
     char *seq=prots[i].aseq; short *ss3=prots[i].ss3;
     char **pdbres=prots[i].pdbres;
     int *ncont=prots[i].ncont;
@@ -225,7 +225,7 @@ int Print_proteins(struct protein *prots, int N_prot,
   for(i=0; i<N_prot; i++){
     if((prots[i].len==0)||(prots[i].Cont_map==NULL))continue;
     fprintf(file_out, "# %d %d  %s %c\n",
-	    prots[i].len, prots[i].N_cont, prots[i].name, prots[i].exp_meth);
+	    prots[i].len, prots[i].N_cont, prots[i].domname, prots[i].exp_meth);
     short **Cont_list=prots[i].Cont_map;
     for(j=0; j<prots[i].len; j++){
       short *res=Cont_list[j];
@@ -284,7 +284,7 @@ int Read_processed_proteins(struct protein *prot, int N_prot,
   names=malloc(N_prot*sizeof(char *));
   for(ip=0; ip<N_prot; ip++){
     names[ip]=malloc(200*sizeof(char));
-    strcpy(names[ip], prot[ip].name);
+    strcpy(names[ip], prot[ip].domname);
   }
 
   /* Read sequences and secondary structures */

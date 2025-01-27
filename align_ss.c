@@ -27,7 +27,7 @@ int Set_sec_str(struct protein *prots, int N_pdb)
   for(int i=0; i<N_pdb; i++){
     if(prots[i].ss3==NULL){
       printf("ERROR, secondary structure of %s (i=%d) not present\n",
-	     prots[i].name, i); return(-1);
+	     prots[i].domname, i); return(-1);
     }
     short *ss=prots[i].ss3; int nss=0; short type=0;
     for(int j=0; j<prots[i].len; j++){
@@ -49,7 +49,7 @@ void Write_ali_prot(int **msa, struct protein **prots,
   FILE *f_ali=fopen(f_ali_ss,"w");
   for(int i=0; i<N_pdb; i++){
     struct protein *prot=prots[i];
-    fprintf(f_ali,">%s\n",prot->name);
+    fprintf(f_ali,">%s\n",prot->domname);
     for(int j=0; j<N_ali; j++){
       if(msa[i][j]<0){
 	fprintf(f_ali,"-");
@@ -69,7 +69,7 @@ void Write_ss_ali(int **ali, struct protein **prot_p, int N_pdb, int N_ali,
   printf("Writing secondary structure MSA in %s\n", f_ali_ss);
   FILE *f_ali=fopen(f_ali_ss,"w");
   for(int i=0; i<N_pdb; i++){
-    fprintf(f_ali,">%s\n",prot_p[i]->name);
+    fprintf(f_ali,">%s\n",prot_p[i]->domname);
     short *ss3=prot_p[i]->ss3;
     for(int j=0; j<N_ali; j++){
       if(ali[i][j]<0){

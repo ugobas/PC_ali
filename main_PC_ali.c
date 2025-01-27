@@ -21,7 +21,8 @@
    # The pdb code is optionally followed by the chain index
    # Ex: >1opd.pdb A or >1opdA or >1opd_A
    -pbdir <path of pdb files>  (default: current folder)
-   -pdbext <extension of pdb files>  (default: none)
+   -pdbext <extension of pdb files>  (default: .pdb)
+   -pdblist <File with PDB codes, chains and domain decomposition>
 
    OUTPUT: MSA (.msa), NJ tree (.tree), structural similarity scores (.sim)
    and structural divergence (.div) for each protein pair, correlations between
@@ -114,15 +115,20 @@ int CONT_DEF=1;
 char pdblist[80]="";
 
 struct Prot_input{
-  char name[80];
+  char code[80];
+  char domname[40];
+  char domain[40];
   char chain;
   char *seq;
   int len;
   int dir;
+  int nfrag;
+  int *ini_frag;
+  int *end_frag;
 };
 
 // Alignments
-int ALL_TYPES=1; // Record for all ali types or only INP and PCAli-mult?
+int ALL_TYPES=0; // Record for all ali types or only INP and PCAli-mult?
 int ATYPE=0, PTYPE=0, CTYPE=0, PT1;
 char *ali_name[NTYPE];
 int code[NTYPE];
@@ -181,6 +187,7 @@ extern void Print_pdb(char *name_in, struct protein **prot_p, int n);
 extern float Compute_RMSD(struct protein **prot_p, int ci, int cj,
 			  int **msa, int L_msa);
 extern void All_distances(float **d2, float *x1, int n1, float *x2, int n2);
+
 void Score_alignment(float *nali, float *SI, float *TM, float *CO,
 		     float *PC, float *PC_d,
 		     int i, int j, float **Seq_diff,
@@ -198,12 +205,10 @@ void Get_input(char *file_ali, char *file_list, char *file_fun,
 	       int *PRINT_SIM, int *PRINT_CV, int *PRINT_DIV,
 	       //int *PRINT_PAIR, int *PRINT_CLIQUE,
 	       int argc, char **argv);
-int Get_alignment_old(struct Prot_input **Prot_input, int *Nali,
-		      char *PDBDIR, char *PDBEXT, int *PRINT_SIM,
-		      char *file_ali);
 int Get_sequences(struct Prot_input **Prot_input, int *Nali, char *file_ali,
 		  int INP_MSA); //char *PDBDIR, char *PDBEXT, 
 int Get_pdb_list(struct Prot_input **Prot_input, char *input);
+int Read_domain(int **ini_frag, int **end_frag, char *domain);
 int *Match_alignments(struct Prot_input *Prot1,
 		      struct Prot_input *Prot2, int N);
 int Remove_gap_cols(int **msa, int N_seq, int L_msa);
@@ -314,6 +319,7 @@ int main(int argc, char **argv)
   if(ALI_PC)Set_type(ali_name, code, &ATYPE, "PC", 4);
   PTYPE=ATYPE; // Only pairwise alignments
   PT1=PTYPE-1;
+  printf("PTYPE= %d\n", PTYPE);
   if(ALI_PC){
     if(NTYPE < PTYPE+NMSA){
       printf("WARNING, the number of built MSA must be <= PTYPE+%d=%d "
@@ -326,7 +332,7 @@ int main(int argc, char **argv)
       Set_type(ali_name, code, &ATYPE, name, 6+i);
     }
   }
-  if(ALL_TYPES){CTYPE=ATYPE;}
+  if(ALL_TYPES){CTYPE=PTYPE+1;}
   else{CTYPE=2;}
   
   float CO[ATYPE], TM[ATYPE], SI[ATYPE], PC[ATYPE], nali[ATYPE], PC_d[ATYPE];
@@ -337,8 +343,8 @@ int main(int argc, char **argv)
   for(int k=0; k<NSIM; k++){
     Sim_ave[k]=malloc(ATYPE*sizeof(double));
     for(i=0; i<ATYPE; i++){Sim_ave[k][i]=0;}
-    Sim_diff[k]=Allocate_mat2_d(CTYPE, CTYPE);
-    Sim_diff_2[k]=Allocate_mat2_d(CTYPE, CTYPE);
+    Sim_diff[k]=Allocate_mat2_d(PTYPE+1, PTYPE+1);
+    Sim_diff_2[k]=Allocate_mat2_d(PTYPE+1, PTYPE+1);
   }
   
   // What to print ? 
@@ -371,52 +377,68 @@ int main(int argc, char **argv)
   int **Prot_ali=NULL; if(N_ali){Prot_ali=Allocate_mat2_i(N_prot, N_ali);}
   
   for(i=0; i<N_prot; i++){
-    //char pdb[90]; sprintf(pdb, "%s%s", Prot_in[i].name, PDB_EXT);
-    printf("\nReading PDB:%s %c\n", Prot_in[i].name, Prot_in[i].chain);
+   struct Prot_input *Pn=Prot_in+i;
+    printf("\nReading PDB:%s %c %s %s\n",
+	   Pn->code, Pn->chain, Pn->domain, Pn->domname);
     Initialize_prot(prot);
-    char *PDB_D=PDBDIR; if(Prot_in[i].dir){PDB_D=PDBDIR2;}
-    int r=Read_PDB_compress(&prot, Prot_in[i].name, &(Prot_in[i].chain),
-			    PDB_D, PDB_EXT);
-    if(r==0 && PDBDIR2[0]!='\0'){
-      r=Read_PDB_compress(&prot, Prot_in[i].name, &(Prot_in[i].chain),
-			  PDBDIR2, PDB_EXT);
+    char *PDB_D=PDBDIR; if(Pn->dir){PDB_D=PDBDIR2;}
+    int r=Read_PDB_compress(&prot, Pn->code, &(Pn->chain), PDB_D, PDB_EXT);
+    if(r==0){
+      r=Read_PDB_compress(&prot, Pn->domname, &(Pn->chain), PDB_D, PDB_EXT);
     }
-    if(r>0){
-      printf("L= %d\n", prot->len);
-      if(Prot_in[i].seq){
-	Prot_in[i].len=Count_AA(Prot_in[i].seq, N_ali);
-	if(Prot_in[i].len!=prot->len){
-	  printf("WARNING, different n.residues in ali (%d) and PDB (%d)\n",
-		 Prot_in[i].len, prot->len);
-	  for(j=0; j<N_ali; j++){
-	    if(Prot_in[i].seq[j]!='-')printf("%c",Prot_in[i].seq[j]);
-	  }
-	  printf("\n");
-	  for(j=0; j<prot->len; j++){printf("%c",prot->aseq[j]);}
-	  printf("\n");
-	}
-	if(Prot_ali && Align_seq(Prot_ali[N_pdb],N_ali,Prot_in[i].seq,
-				 prot->aseq,prot->len)<0)continue;
-      }else{
-	Prot_in[i].len=prot->len;
-	Prot_in[i].seq = malloc(prot->len*sizeof(char));
-	for(j=0; j<prot->len; j++)Prot_in[i].seq[j]=prot->aseq[j];
+    if(PDBDIR2[0]!='\0' && strcmp(PDB_D, PDBDIR2)){
+      if(r==0){
+	r=Read_PDB_compress(&prot, Pn->code, &(Pn->chain), PDBDIR2, PDB_EXT);
       }
-      if(Prot_in[i].len<prot->len){prot->len=Prot_in[i].len;}
-      L_seq[N_pdb]=prot->len;
-      if(Prot_ali==NULL && prot->len>N_ali){N_ali=prot->len;}
-      
-      int NC=Compute_contact_list(prot, CONT_TYPE, CONT_THR, IJ_MIN);
-      printf("%d contacts\n", NC);
-      Set_scores(prot);
-      i_seq[N_pdb]=i; N_pdb++; prot++;
+      if(r==0){
+	r=Read_PDB_compress(&prot, Pn->code, &(Pn->chain), PDBDIR2, PDB_EXT);
+      }
     }
+    if(r<=0)continue;
+
+    strcpy(prot->domname, Pn->domname);
+    strcpy(prot->domain,  Pn->domain);
+    if(Pn->domain[0]!='\0'){
+      Pn->nfrag=Read_domain(&(Pn->ini_frag), &(Pn->end_frag), Pn->domain);
+      Select_domain(prot, Pn->ini_frag, Pn->end_frag, Pn->nfrag);
+    }
+    printf("L= %d\n", prot->len);
+
+    if(Prot_in[i].seq){ // Amino acids from alignment
+      Prot_in[i].len=Count_AA(Prot_in[i].seq, N_ali);
+      if(Prot_in[i].len!=prot->len){
+	printf("WARNING, different n.residues in ali (%d) and PDB (%d)\n",
+	       Prot_in[i].len, prot->len);
+	for(j=0; j<N_ali; j++){
+	  if(Prot_in[i].seq[j]!='-')printf("%c",Prot_in[i].seq[j]);
+	}
+	printf("\n");
+	for(j=0; j<prot->len; j++){printf("%c",prot->aseq[j]);}
+	printf("\n");
+      }
+      if(Prot_ali && Align_seq(Prot_ali[N_pdb],N_ali,Prot_in[i].seq,
+			       prot->aseq,prot->len)<0)continue;
+      if(Prot_in[i].len<prot->len){prot->len=Prot_in[i].len;}
+    }else{ // Amino acids from PDB
+      Prot_in[i].len=prot->len;
+      Prot_in[i].seq = malloc(prot->len*sizeof(char));
+      for(j=0; j<prot->len; j++)Prot_in[i].seq[j]=prot->aseq[j];
+    }
+
+    L_seq[N_pdb]=prot->len;
+    if(Prot_ali==NULL && prot->len>N_ali){N_ali=prot->len;}
+    
+    int NC=Compute_contact_list(prot, CONT_TYPE, CONT_THR, IJ_MIN);
+    printf("%d contacts\n", NC);
+    Set_scores(prot);
+    i_seq[N_pdb]=i; N_pdb++; prot++;
   }
   printf("\n%d proteins read out of %d listed in %s\n",N_pdb, N_prot, file_ali);
   if(N_pdb<2){
     printf("ERROR, fewer than 2 proteins found\n"); exit(8);
   }
-  
+  // End reading PDB files
+
   // Average number of contacts per residue
   c_ave=0; double c_norm=0;
   for(i=0; i<N_pdb; i++){
@@ -427,6 +449,8 @@ int main(int argc, char **argv)
   c_ave/=c_norm;
 
   
+
+
   // Alignments
   if(Prot_ali==NULL){N_ali*=2; Prot_ali=Allocate_mat2_i(N_prot, N_ali);}
   int N_ali_max=3*N_ali, N_ali_max_ini=N_ali_max;
@@ -522,9 +546,9 @@ int main(int argc, char **argv)
   }
   
   // For computing divergence, PC is computed without tha nali part
-  float **na_all[CTYPE], **SI_all[CTYPE], **TM_all[CTYPE],
-    **CO_all[CTYPE], **PC_all[CTYPE], **PC_div_all[CTYPE];
-  for(int it=0; it<CTYPE; it++){
+  float **na_all[PTYPE+1], **SI_all[PTYPE+1], **TM_all[PTYPE+1],
+    **CO_all[PTYPE+1], **PC_all[PTYPE+1], **PC_div_all[PTYPE+1];
+  for(int it=0; it<=PTYPE; it++){
     na_all[it]=malloc(N_pdb*sizeof(float *));
     SI_all[it]=malloc(N_pdb*sizeof(float *));
     TM_all[it]=malloc(N_pdb*sizeof(float *));
@@ -607,7 +631,7 @@ int main(int argc, char **argv)
   for(i=0; i<N_pdb; i++){
     int al1i=i_seq[i];
     struct protein *proti=prots+i;
-    printf("Str %s %d of %d L= %d\n", proti->name, i, N_pdb, proti->len);
+    printf("Str %s %d of %d L= %d\n", proti->domname, i, N_pdb, proti->len);
     seq_group[i]=-1;
 
     if(ALI_SS && SS_MULT==0){
@@ -634,7 +658,7 @@ int main(int argc, char **argv)
 	Pair_ali(ali_ij, N_ali, Prot_ali[i], Prot_ali[j])/norm_ali;
 	if(TMs>0){
 	  TM[0]=TM_all[0][i][j];
-	  Comp_TM=0;
+	  //Comp_TM=0;
 	}
       }else{ // Perform initial pairwise alignment
 	//printf("Performing pairwise alignment\n");
@@ -650,7 +674,7 @@ int main(int argc, char **argv)
       // Leave if sequence identity is above threshold
       if(OMIT_SAME && SI[it] > sim_thr){
 	printf("prots %s and %s are almost identical, omitting %s\n",
-	       proti->name, protj->name, proti->name);
+	       proti->domname, protj->domname, proti->domname);
 	seq_group[i]=seq_group[j];
 	goto end_i;
       }
@@ -705,10 +729,12 @@ int main(int argc, char **argv)
 	if(SI_high>=0 && CO_high>=0)sum_SS_SI_CO[SI_high][CO_high]++;
 	if(TM_high>=0 && CO_high>=0)sum_SS_TM_CO[TM_high][CO_high]++;
 
-	na_all[it][i][j]=nali[it];
-	SI_all[it][i][j]=SI[it];
-	TM_all[it][i][j]=TM[it];
-	CO_all[it][i][j]=CO[it];
+	if(ALL_TYPES){
+	  na_all[it][i][j]=nali[it];
+	  SI_all[it][i][j]=SI[it];
+	  TM_all[it][i][j]=TM[it];
+	  CO_all[it][i][j]=CO[it];
+	}
       }
 
       // TM_score based alignment
@@ -783,7 +809,7 @@ int main(int argc, char **argv)
 	  }
 	}
 	
-	Comp_TM=0; 
+	Comp_TM=PRINT_ID; 
 	Score_alignment(nali, SI, TM, CO, PC, PC_d, i, j, Seq_diff,
 			na_all, SI_all, TM_all, CO_all, PC_all, PC_div_all,
 			NULL, NULL, c_ave, &d02, d2, ali_all[it],
@@ -818,7 +844,7 @@ int main(int argc, char **argv)
       
       // Print similarities
       if(file_sim){
-	fprintf(file_sim, "%s\t%s", proti->name, protj->name);
+	fprintf(file_sim, "%s\t%s", proti->domname, protj->domname);
 	for(int a=0; a<PTYPE; a++){
 	  if(a){
 	    if(ALL_TYPES==0)break; // Print only input
@@ -984,6 +1010,7 @@ int main(int argc, char **argv)
 
   int it_opt=-1;
   int **msa_opt=NULL, L_msa_opt=0;
+  char name_PC[90];
   if(ALI_PC){
     printf("Making %d multiple alignments\n", NMSA);
     int **msa=Allocate_mat2_i(N_seq, N_ali_max);
@@ -992,7 +1019,7 @@ int main(int argc, char **argv)
 
     float PC_opt=0, PC_prev[NMSA];
     int len_seq[N_seq], i, L_msa=0;
-    char name_PC[90], name_msa[95];
+    char name_msa[95];
     sprintf(name_PC, "%s.PCAli", name_in);
     sprintf(name_msa, "%s.fas", name_PC);
 
@@ -1027,14 +1054,13 @@ int main(int argc, char **argv)
 
       }else if(last){
 	// Restore optimal values
-	it=it_opt; L_msa=L_msa_opt; 
+	L_msa=L_msa_opt;
 	for(i=0; i<N_seq; i++){ // Copy msa and PC_div
 	  int *mso=msa_opt[i], *ms=msa[i], j;
 	  for(j=0; j<L_msa; j++){*ms=*mso; mso++; ms++;}
 	  float *Div_o=PC_Div_opt[i], *Div_s=PC_Div[i];
 	  for(j=0; j<i; j++){*Div_s=*Div_o; Div_o++; Div_s++;}
 	}
-	d2=Allocate_mat2_f(L_msa_opt, L_msa_opt);
 
       }else{ // Progressive alignment
 	for(i=0; i<N_seq; i++) 
@@ -1052,16 +1078,25 @@ int main(int argc, char **argv)
 
       // Score alignment
       float PC_sum=0;
-      float **d2=NULL; //Allocate_mat2_f(L_msa, L_msa);
-      if(last)printf("Last MSA\n");
+      //float **d2=NULL; //Allocate_mat2_f(L_msa, L_msa);
       printf("Score multiple alignment %d\n", itt);
-      TMs=TM_score_mult(TM_all[1], msa, L_msa, N_seq, prot_p, 0);
+      TMs=TM_score_mult(TM_all[PTYPE], msa, L_msa, N_seq, prot_p, 0);
+      // The rotated coordinates are recorded at prot_p[i]
       if(TMs>0){
 	printf("Multiple superimposition done, TM= %.3f\n",
-	       TMs*2/(N_seq*(N_seq-1))); Comp_TM=0;
+	       TMs*2/(N_seq*(N_seq-1)));
+	Comp_TM=1; //=0;
       }else{
 	printf("WARNING, multiple superimposition could not be done\n");
 	Comp_TM=1;
+      }
+      if(last){
+	//it=it_opt;
+	d2=Allocate_mat2_f(L_msa, L_msa);
+	if(PRINT_ID)Comp_TM=1;
+	printf("Last MSA (%d), Comp_TM=%d\n", it, Comp_TM);
+      }else{
+	d2=NULL;
       }
       if(N_ali_max>N_ali_max_ini){
 	free(ali_ij);
@@ -1071,16 +1106,16 @@ int main(int argc, char **argv)
 
       // Score pairwise
       for(i=0; i<N_seq; i++){
-	int ii=rep_str[i];
-	struct protein *proti=prots+ii;
-	printf("Str %s %d of %d L= %d\n", proti->name, i, N_seq, proti->len);
+	//int ii=rep_str[i];
+	struct protein *proti=prot_p[i]; //prots+ii;
+	printf("Str %s %d of %d L= %d\n", proti->domname,i,N_seq,proti->len);
 	for(j=0; j<i; j++){
-	  int jj=rep_str[j]; //i1, i2;
-	  struct protein *protj=prots+jj;
+	  //int jj=rep_str[j]; //i1, i2;
+	  struct protein *protj=prot_p[j]; //prots+jj;
 	  Pair_ali(ali_ij, L_msa, msa[i], msa[j]);
 
 	  float d02, norm_c, norm_ali=Normalization(&norm_c, proti, protj);
-	  if(TMs>0){TM[it]=TM_all[1][i][j];}
+	  if(TMs>0){TM[it]=TM_all[PTYPE][i][j];}
 	  Score_alignment(nali, SI, TM, CO, PC, PC_d, i, j, Seq_diff,
 			  na_all, SI_all, TM_all, CO_all, PC_all, PC_div_all,
 			  Rot_pair[i][j], Shift_pair[i][j],
@@ -1098,8 +1133,9 @@ int main(int argc, char **argv)
 	  }
 	}
       } // end pairs
+      if(d2)Empty_matrix_f(d2, L_msa);
       if(it_opt<0 || PC_sum > PC_opt){
-	PC_opt=PC_sum; L_msa_opt=L_msa; it_opt=it;
+	PC_opt=PC_sum; L_msa_opt=L_msa; it_opt=it; NMSA_act=itt+1;
 	for(i=0; i<N_seq; i++){ // Copy msa and PC_div
 	  int *mso=msa_opt[i], *ms=msa[i], j;
 	  for(j=0; j<L_msa; j++){*mso=*ms; mso++; ms++;}
@@ -1120,7 +1156,6 @@ int main(int argc, char **argv)
       PC_prev[itt]=PC_sum;
 
     } // end iter
-    if(d2)Empty_matrix_f(d2, L_msa);
     Empty_matrix_f(Seq_diff, N_pdb);
 
     // Print optimal MSA
@@ -1143,7 +1178,7 @@ int main(int argc, char **argv)
       FILE *file_div=fopen(name_div, "w");
       fprintf(file_div, "%d\n", N_seq);
       for(i=0; i<N_seq; i++){
-	fprintf(file_div, "%s", prots[rep_str[i]].name);
+	fprintf(file_div, "%s", prots[rep_str[i]].domname);
 	for(j=0; j<N_seq; j++)fprintf(file_div, " %.3f",PC_Div_opt[i][j]);
 	fprintf(file_div, "\n");
       }
@@ -1158,7 +1193,7 @@ int main(int argc, char **argv)
     //Empty_matrix_f(PC_Div_opt, N_seq);
 
     {
-      char name_out[100]; sprintf(name_out, "%s.summary.dat", name_in);
+      char name_out[100]; sprintf(name_out, "%s.summary.dat", name_PC);
       printf("Writing summary scores in %s\n", name_out);
       FILE *file_out=fopen(name_out, "w");
       char out[2000]="";
@@ -1169,15 +1204,15 @@ int main(int argc, char **argv)
       Print_scores(out, Sim_ave[4], "Princ Component");
       fprintf(file_out, "%s", out);
       fclose(file_out);
-      printf("Optimal multiple alignment: %s %.4f\n",
-	     ali_name[it_opt], Sim_ave[4][it_opt]/npair_seq);
+      printf("Optimal multiple alignment out of %d: %s %.4f\n",
+	     NMSA, ali_name[it_opt], Sim_ave[4][it_opt]/npair_seq);
     }
 
     /*****************************************************************
                  Print sec.str. propensities for multiple PC_ali
     ******************************************************************/
     char name_prop[100];
-    Change_ext(name_prop, name_in, ".prop");
+    sprintf(name_prop, "%s.id", name_PC);
     Print_propensities(name_prop);
     
   } // end ali_PC
@@ -1250,10 +1285,10 @@ int main(int argc, char **argv)
     for(j=0; j<i; j++){
       int cj=rep_str[j]; struct protein *pj=prots+cj;
        
-      if(file_sim)fprintf(file_sim, "%s\t%s", pi->name, pj->name);
-      //if(file_div_all)fprintf(file_div_all, "%s\t%s", pi->name, pj->name);
+      if(file_sim)fprintf(file_sim, "%s\t%s", pi->domname, pj->domname);
+      //if(file_div_all)fprintf(file_div_all, "%s\t%s",pi->domname,pj->domname);
 
-      for(int it=0; it<2; it++){
+      for(int it=0; it<2; it++){//it=0: input MSA it=1: opt MSA
 	int a; int c1, c2;
 
 	if(it==0){if(INP_MSA){a=0; c2=i; c1=j;}else{continue;}}
@@ -1325,7 +1360,7 @@ int main(int argc, char **argv)
 
   if(PRINT_ID ){
     char name_id[200];
-    Change_ext(name_id, name_in, ".id");
+    sprintf(name_id, "%s.id", name_PC);
     printf("Probabilities of identity written in %s for all pairs\n",name_id);
     FILE *file_id=fopen(name_id, "w");
     fprintf(file_id,"# Conservation properties of aligned residues\n");
@@ -1380,17 +1415,17 @@ int main(int argc, char **argv)
 	struct protein *pj=prots+j;
 	int homo; double qinf=0;
 	Cont_Div_PDB[i][j]=
-	  Compute_Dcont(&qinf,CO_all[it_opt][i][j],pi->len,pj->len,&homo,NORM);
-	TN_Div_PDB[i][j]=Divergence(SI_all[it_opt][i][j], S0, DMAX);
-	TM_Div_PDB[i][j]=Divergence(TM_all[it_opt][i][j], TM0, DMAX);
+	  Compute_Dcont(&qinf,CO_all[PTYPE][i][j],pi->len,pj->len,&homo,NORM);
+	TN_Div_PDB[i][j]=Divergence(SI_all[PTYPE][i][j], S0, DMAX);
+	TM_Div_PDB[i][j]=Divergence(TM_all[PTYPE][i][j], TM0, DMAX);
 	double PC0=(PC0_1+PC_load[3]*qinf)/PC_norm_div;
-	double PC_a = PC_div_all[it_opt][i][j];
+	double PC_a = PC_div_all[PTYPE][i][j];
 	PC_Div_PDB[i][j]=Divergence(PC_a, PC0, DMAX);
       }
     }
   }
 
-  for(int it=0; it<ATYPE; it++){
+  for(int it=0; it<PTYPE; it++){
     if(na_all[it])Empty_matrix_f(na_all[it], N_pdb);
     if(SI_all[it])Empty_matrix_f(SI_all[it], N_pdb);
     if(TM_all[it])Empty_matrix_f(TM_all[it], N_pdb);
@@ -1486,7 +1521,7 @@ int main(int argc, char **argv)
       Num_out+=N_out[i][j];
       if(Seq_Id[i][j]>SI_thr){SI_low++; continue;}
       fprintf(file_out, "%s\t%s\t%d\t%d",
-	      prots[rep_str[i]].name, prots[rep_str[j]].name,
+	      prots[rep_str[i]].domname, prots[rep_str[j]].domname,
 	      L_seq[rep_str[i]]-L_seq[rep_str[j]], 
 	      N_out[i][j]);
 
@@ -1626,7 +1661,7 @@ void help(char *pname){
 	 "(CSIC-UAM), Madrid, Spain\n"
 	 "Email: <ubastolla@cbm.csic.es>\n\n"
 	 "PC_ali performs hybrid multiple structure and sequence alignmentsbased on the structure+sequence similarity score PC_sim, prints pairwise similarity scores and divergence scores and neighbor-joining phylogenetic tree obtained with the hybrid evolutionary divergence measure based on PC_sim. Optionally, it computes violations of the molecular clock for each pair of proteins.\n\n"
-	 "It takes as input either not aligned sequences (option -seq) or MSA (option -ali). PDB file names must be specified as sequence name\n\n"
+	 "It takes as input either a list of PDB files (1=PDB code, 2=chain index, 3=domain decomposition as 1-103/104-207 with SEQRES indexes, 4=folder 5=domain name) in the folder specified by -pdbdir and, if necessary, -pdbdir2, or not aligned sequences (option -seq) or MSA (option -ali). In the last cases PDB codes and names must be specified as sequence names\n\n"
 	 "It includes a modification of the needlemanwunsch aligner programmed by Dr. Andrew C. R. Martin in the Profit suite of programs, (c) SciTech Software 1993-2007\n\n"
 	 "USAGE:\n"
 	 "PC_ali\n"
@@ -1640,7 +1675,8 @@ void help(char *pname){
 	 "\t # Ex: >1opd.pdb A or >1opdA or >1opd_A\n"
 	 "\t -sim_thr <threshold above which sequences are joined>\n"
 	 "\t # For avoiding to join, set -sim_thr 1\n"
-	 "\t -clique ! Initial alignment is based on cliques\n\n");
+	 "\t -id Print propensities between conservation measures\n"
+	 "\t -clique ! Initial multiple alignment is based on cliques\n\n");
   printf("Computed similarity measures:\n"
 	 "(1) Aligned fraction ali,\n"
 	 "(2) Sequence identity SI,\n"
@@ -1704,13 +1740,14 @@ void help(char *pname){
 	 "\t -print_pdb    ! Print multiple structure superimposition\n"
 	 "\t -print_sim    ! Print similarity measures for all pairs\n"
 	 "\t -print_div    ! Print PC divergence for all pairs\n"
+	 "\t -id           ! Print propensities between conservation measures\n"
 	 "\t -clique ! Initial alignment is based on cliques\n"
 	 "\t -ali_tm     ! Make pairwise alignments that target TM score\n"
 	 "\t -ali_co     ! Make pairwise alignments that target Cont Overlap\n"
 	 "\t -ali_ss     ! Make alignments that target sec.structure\n"
 	 "\t -ss_mult    ! target sec.structure with multiple alignment\n"
 	 "\t -shift_max <Maximum shift for targeting sec.str.>\n"
-	 "\t -print_id     ! Print statistics of identical residues\n"
+	 "\t -id     ! Print statistics of identical residues\n"
 	 "\t -print_cv     ! Print clock violations\n"
 	 "\t -func <file with function similarity for pairs of proteins>\n"
 	 "\n", sim_thr);
@@ -1762,116 +1799,15 @@ void Print_ali_ss(int *ali_i, short *ss3_i, int *ali_j, short *ss3_j,
   printf("\n");
 }
 
-int Get_alignment_old(struct Prot_input **Prot_input, int *Nali,
-		      char *PDBDIR, char *PDB_EXT, int *PRINT_SIM,
-		      char *file_ali)
-{
-  // Open file
-  FILE *file_in=fopen(file_ali, "r");
-  if(file_in==NULL){
-    printf("ERROR, alignment file %s does not exist\n", file_ali); exit(8);
-  }
-  // Count proteins and read path
-  char string[1000]; int dir=0, n=0;
-  while(fgets(string, sizeof(string), file_in)!=NULL){
-    if(string[0]=='>'){
-      n++;
-    }else if(n==0){
-      if(strncmp(string, "PDBDIR", 6)==0){
-	sscanf(string+7,"%s", PDBDIR);
-	printf("Directory for PDB files: %s\n", PDBDIR);
-	dir=1;
-      }else if(strncmp(string, "PDBEXT", 6)==0){
-	sscanf(string+7, "%s", PDB_EXT);
-      }else if(strncmp(string, "PRINT_SIM", 8)==0){
-	sscanf(string+9, "%d", PRINT_SIM);
-      }
-    }
-  }
-  fclose(file_in);
-  if(n==0){
-    printf("ERROR, no sequence found in file %s\n", file_ali); exit(8);
-  }
-  printf("%d sequences found in %s\n", n, file_ali);
-
-  // Allocate and read sequences
-  int LMAX=10000, l=0, i;
-  char chain[10], dumm[40];
-  char *Seq=malloc(LMAX*sizeof(char)), *s=NULL;
-  *Prot_input=malloc(n*sizeof(struct Prot_input));
-  n=-1; *Nali=0;
-  file_in=fopen(file_ali, "r");
-  if(dir)fgets(string, sizeof(string), file_in);
-  while(fgets(string, sizeof(string), file_in)!=NULL){
-    if(string[0]=='#')continue;
-    if(string[0]=='>'){
-      n++;
-      sscanf(string+1, "%s", (*Prot_input)[n].name);
-      if(string[5]=='_'){
-	printf("Getting chain after _\n");
-	(*Prot_input)[n].name[4]='\0';
-	(*Prot_input)[n].chain=string[6];
-      }else if((string[5]>=65)&&(string[5]<=90)){ // Maiuscule
-	printf("Getting chain after character 4\n");
-	(*Prot_input)[n].name[4]='\0';
-	(*Prot_input)[n].chain=string[5];
-      }else if((string[6]>=65)&&(string[6]<=90)){ // Maiuscule
-	printf("Getting chain after character 5\n");
-	(*Prot_input)[n].name[4]='\0';
-	(*Prot_input)[n].chain=string[6];
-      }else{
-	for(i=0; i<10; i++)chain[i]='\0';
-	int c=sscanf(string, "%s%s\n", dumm, chain);
-	if((c>1)&&(chain[0]!='\0')&&(chain[0]!='\n')){
-	  (*Prot_input)[n].chain=chain[0];
-	  printf("Getting chain after space\n");
-	}else{
-	  printf("WARNING, no chain found\n");
-	  (*Prot_input)[n].chain=' ';
-	}
-      }
-      int ic=(*Prot_input)[n].chain;
-      if((*Prot_input)[n].chain=='\n' ||
-	 (*Prot_input)[n].chain=='\r'||
-	 (ic<48) || (ic>122) ){
-	(*Prot_input)[n].chain=' ';
-      }
-      printf("%s ",string);
-      printf("%s %c %d\n", (*Prot_input)[n].name, (*Prot_input)[n].chain, ic);
-      if((*Nali==0)&&(l)){
-	*Nali=l;
-	(*Prot_input)[0].seq=malloc(*Nali*sizeof(char));
-	s=(*Prot_input)[0].seq;
-	for(l=0; l<*Nali; l++){*s=Seq[l]; s++;}
-      }
-      if(*Nali){
-	(*Prot_input)[n].seq=malloc(*Nali*sizeof(char));
-	s=(*Prot_input)[n].seq; l=0;
-      }else{
-	s=Seq; l=0;
-      }
-    }else if(n>=0){
-      char *c=string;
-      while(*c!='\n'){*s=*c; l++; s++; c++;}
-      if(l > LMAX){
-	printf("ERROR, alignment length larger than maximum allowed %d\n", l);
-	printf("Increase LMAX in code %s\n", CODENAME); exit(8);
-      }
-      if((*Nali)&&(l>*Nali)){
-	printf("ERROR, too many column in alignment %d.",n+1);
-	printf(" Expected %d, found >= %d\n", *Nali, l); exit(8); 
-      }
-    }
-  }
-  n++;
-  fclose(file_in);
-  printf("%d sequences with %d columns found in MSA %s\n",
-	 n, *Nali, file_ali);
-  return(n);
-}
-
 int Get_pdb_list(struct Prot_input **Prot_input, char *input)
 {
+  // Format of PDB list: PDB chain domain dir or PDB chain dir domain?
+  // What about domain name? What if one of them is missing?
+  // Format a 5 col : PDB chain domain domname dir. Missing columns should be NA
+  // Format b 3 col:  PDB chain dir
+  // Example from Georgia: 1fdr_	A	2	0.999
+
+  // Domain example: 10mhA01	1-186,285-327
   // Open file
   if(input[0]=='\0')return(0);
   FILE *file_in=fopen(input, "r");
@@ -1890,35 +1826,105 @@ int Get_pdb_list(struct Prot_input **Prot_input, char *input)
   printf("%d proteins found in %s\n", n, input);
 
   // Allocate and read PDB codes
-  *Prot_input=malloc(n*sizeof(struct Prot_input));
   file_in=fopen(input, "r");
-  n=0;
+  *Prot_input=malloc(n*sizeof(struct Prot_input));
+  n=0; int isdom=-2;
   while(fgets(string, sizeof(string), file_in)!=NULL){
     if(string[0]=='#')continue;
-    char name[80], chain[10]; int dir=0;
-    int arg=sscanf(string, "%s%s%d", name, chain, &dir);
-    strcpy((*Prot_input)[n].name, name);
-    (*Prot_input)[n].chain=' ';
+    int dir=1;
+    char name[80], chain[10], word3[200], domname[40]; 
+    int arg=sscanf(string, "%s%s%s%s%d", name, chain, word3, domname, &dir);
+    struct Prot_input *Pn=(*Prot_input)+n;
+    strcpy(Pn->code, name);
+    Pn->chain=' ';
+    Pn->domname[0]='\0';
+    Pn->domain[0]='\0';
+    Pn->nfrag=1;
+    Pn->ini_frag=NULL;
+    Pn->end_frag=NULL;
+
     // get chain
     if((arg>1)&&(chain[0]!='\0')&&(chain[0]!='\n')){
-      (*Prot_input)[n].chain=chain[0];
+      Pn->chain=chain[0];
     }
-    if(arg<3){dir=0;}else{dir--;}
-    if(dir!=0 && dir !=1){
-      printf("ERROR reading %s, the folder can be either 1 or 2\n"
-	     "Just read: %s", input, string); exit(8);
-    }else if(dir==1 && PDBDIR2[0]=='\0'){
-      printf("ERROR reading %s, folder is 1 but PDBDIR2 not given (%s)\n",
-	     "Just read: %s", input, PDBDIR2, string); exit(8);
+    // What is third column?
+    if(arg>=3){
+      if(isdom==-2){
+	// if contains - it is domain, if 1 or 2 it is dir
+	char *ptr=word3;
+	while(*ptr!='\0'){if(*ptr=='-'){isdom=1; break;} ptr++;}
+	if(isdom<0){
+	  sscanf(word3, "%d", &dir); if(dir==1 || dir==2){isdom=0;}
+	}
+      }
+      // Read dir
+      if(isdom==0){sscanf(word3, "%d", &dir);}
+      else if(arg<5){dir=1;}
+      if(dir==1 || dir==2){dir--;}
+      else{
+	printf("ERROR reading %s, dir (col 3 or 5) must be either 1 or 2\n"
+	       "Just read: %s", input, string); exit(8);
+      }
+      if(dir==1 && PDBDIR2[0]=='\0'){
+	printf("ERROR reading %s, dir (col 3 or 5) is 2 but "
+	       "PDBDIR2 not given\n",
+	       "Just read: %s", input, string); exit(8);
+      }
     }
-    (*Prot_input)[n].dir=dir;
-    printf("%s %c %d\n", (*Prot_input)[n].name, (*Prot_input)[n].chain, dir);
+    Pn->dir=dir;
+
+    printf("file=%s chain=%c", Pn->code, Pn->chain);
+    // Read domain
+    if(arg>=4){strcpy(Pn->domname, domname);}
+    if(Pn->domname[0]=='\0'){
+      sprintf(Pn->domname, "%s%c",Pn->code, Pn->chain);
+    }
+    if(isdom==1){
+      strcpy(Pn->domain, word3);
+      Pn->nfrag=Read_domain(&(Pn->ini_frag), &(Pn->end_frag), Pn->domain);
+      printf(" %d domains: %s", Pn->nfrag, Pn->domain);
+      if(Pn->domname[0]){printf(" %s", Pn->domname);}
+    }
+    printf(" folder=%d\n", Pn->dir);
     (*Prot_input)[n].seq=NULL;
     (*Prot_input)[n].len=0;
     n++;
   }
   fclose(file_in);
   return(n);
+}
+
+int Read_domain(int **ini_frag, int **end_frag, char *domain)
+{
+  char *frag=domain; int n_frag=1, m_frag=0, isfrag=0;
+  while(*frag!='\0'){
+    if(*frag=='-'){m_frag++; isfrag=1;}
+    else if(*frag==','){n_frag++;}
+    frag++;
+  }
+  if(isfrag==0){
+    printf("ERROR, %s wrong domain format (no -)\n", domain); exit(8);
+  }
+  if(n_frag!=m_frag){
+    printf("ERROR, %s wrong domain format (%d - but %d ,)\n",
+	   domain, m_frag, n_frag); exit(8);
+  }
+  *ini_frag=malloc(n_frag*sizeof(int));
+  *end_frag=malloc(n_frag*sizeof(int));
+  frag=domain; char *frag1=frag; n_frag=0;
+  while(*frag !='\0'){
+    if(*frag=='-'){
+      *frag=' '; sscanf(frag1, "%d", (*ini_frag)+n_frag); *frag='-';
+      frag1=frag+1;
+    }else if(*frag==','){
+      *frag=' '; sscanf(frag1, "%d", (*end_frag)+n_frag);  *frag='-';
+      frag1=frag+1;
+      n_frag++;
+    }
+    frag++;
+  }
+  sscanf(frag1, "%d", (*end_frag)+n_frag); n_frag++;
+  return(n_frag);
 }
 
 int Get_sequences(struct Prot_input **Prot_input, int *Nali, char *file_ali,
@@ -1945,11 +1951,21 @@ int Get_sequences(struct Prot_input **Prot_input, int *Nali, char *file_ali,
 
   // Allocate and read sequences
   int l=0, i;
-  char chain[40], dumm[40], *s=NULL;
   //int LMAX=10000; char Seq[LMAX];
   *Prot_input=malloc(n*sizeof(struct Prot_input));
+  struct Prot_input *Pi=*Prot_input;
+  for(i=0; i<n; i++){
+    Pi->nfrag=1;
+    Pi->ini_frag=NULL;
+    Pi->end_frag=NULL;
+    Pi->domname[0]='\0';
+    Pi->domain[0]='\0';
+    Pi->dir=0;
+    Pi++;
+  }
   n=-1; *Nali=0;
 
+  char word1[40], word2[40], word3[40], *s=NULL; int d1;
   file_in=fopen(file_ali, "r");
   while(fgets(string, sizeof(string), file_in)!=NULL){
     if(string[0]=='#')continue;
@@ -1966,25 +1982,33 @@ int Get_sequences(struct Prot_input **Prot_input, int *Nali, char *file_ali,
       n++;
       (*Prot_input)[n].chain=' ';
       (*Prot_input)[n].dir=0;
-      int c=sscanf(string+1, "%s%s", (*Prot_input)[n].name, chain);
-      char *name=(*Prot_input)[n].name;
-      int nc=0; char *ch=chain; while(*ch!='\0'){ch++; nc++;}
-      if(c>1 && nc==1 && (chain[0]!='\n')){
-	(*Prot_input)[n].chain=chain[0];
-      }else if( name[4]=='_' && name[5]!='\0' && name[6]=='\0'){
-	printf("Getting chain after _\n");
-	(*Prot_input)[n].chain=name[5];
-	//name[4]='\0';
-      }else if(name[4]!='\0' && name[4]!='_' && name[5]=='\0' ){
-	printf("Getting chain after character 4\n");
-	(*Prot_input)[n].chain=name[4];
-	//name[4]='\0';
+      strcpy(word1, "");
+      strcpy(word2, "");
+      int c=sscanf(string+1, "%s%s%s%d",
+		   (*Prot_input)[n].domname, word1, word2, &d1);
+      char *name=(*Prot_input)[n].domname;
+      int nc=0; char *ch=word1; while(*ch!='\0'){ch++; nc++;}
+      // Get chain
+      if(c==1){
+	if(name[4]=='_'){(*Prot_input)[n].chain=name[5];}
+	else{(*Prot_input)[n].chain=name[4];}
+      }else if(nc==1){
+	(*Prot_input)[n].chain=word1[0];
       }
-      if((*Prot_input)[n].chain=='\n' ||
-	 (*Prot_input)[n].chain=='\r'){
-	(*Prot_input)[n].chain=' ';
+
+      // Get domain
+      if(c>2){
+	strcpy((*Prot_input)[n].domain, word2);
       }
-      printf("%s %c\n", (*Prot_input)[n].name, (*Prot_input)[n].chain);
+
+      // Get code
+      name[4]=' ';
+      sscanf(name, "%s", (*Prot_input)[n].code);
+
+      // Get dir
+      if(c>3){(*Prot_input)[n].dir=d1;}
+
+      printf("%s %c\n", (*Prot_input)[n].code, (*Prot_input)[n].chain);
       if(INP_MSA && (*Nali==0)&&(l)){*Nali=l;} l=0;
 
       /*if((*Nali==0)&&(l)){
@@ -2004,7 +2028,7 @@ int Get_sequences(struct Prot_input **Prot_input, int *Nali, char *file_ali,
       while((*c!='\n')&&(*c!='\r')&&(*c!='\0')&&(*c!=' ')){
 	/*if(l > LMAX){
 	  printf("ERROR, alignment %s length %d > maximum allowed %d\n",
-		 (*Prot_input)[n].name, l, LMAX);
+		 (*Prot_input)[n].domname, l, LMAX);
 	  printf("Increase LMAX in code %s\n", CODENAME); exit(8);
 	  }*/
 	if(INP_MSA && (l>*Nali)&&(*Nali)){
@@ -2015,7 +2039,7 @@ int Get_sequences(struct Prot_input **Prot_input, int *Nali, char *file_ali,
 	  }
 	  if(allgaps==0){
 	    printf("ERROR, too many columns in sequence %s",
-		   (*Prot_input)[n].name);
+		   (*Prot_input)[n].domname);
 	    printf(" Expected %d, found %d\n", *Nali, i);
 	    for(i=0; i<l; i++)printf("%c", (*Prot_input)[n].seq[i]);
 	    printf("+");
@@ -2024,7 +2048,7 @@ int Get_sequences(struct Prot_input **Prot_input, int *Nali, char *file_ali,
 	      printf("%c",*d); d++;
 	    }
 	    printf("\n");
-	    printf("Previous seq %s:\n",(*Prot_input)[k].name);
+	    printf("Previous seq %s:\n",(*Prot_input)[k].domname);
 	    for(i=0; i<*Nali; i++)printf("%c", (*Prot_input)[k].seq[i]);
 	    printf("\n");
 	    exit(8); // end error
@@ -2303,14 +2327,14 @@ int *Match_alignments(struct Prot_input *Prot1,
   for(int i=0; i<N; i++){
     ali_str[i]=-1;
     for(int j=0; j<N; j++){
-      if((strcmp(Prot2[j].name, P1->name)==0)&&
+      if((strcmp(Prot2[j].domname, P1->domname)==0)&&
 	 (Prot2[j].chain==P1->chain)){
 	ali_str[i]=j; break;
       }
     }
     if(ali_str[i]<0){
       printf("WARNING, protein %s%c i=%d N=%d not matched\n",
-	     P1->name, P1->chain, i, N);
+	     P1->domname, P1->chain, i, N);
       free(ali_str); return(NULL);
     } 
     P1++;
@@ -2460,12 +2484,13 @@ void Get_input(char *file_ali, char *file_list, char *file_fun,
       }
     }else if(strcmp(argv[i], "-print_pdb")==0){
       PRINT_PDB=1;
+    }else if(strcmp(argv[i], "-id")==0){
+      PRINT_ID=1;
+      printf("Printing propensities between conservation measures\n");
     }else if(strcmp(argv[i], "-print_sim")==0){
       *PRINT_SIM=1;
     }else if(strcmp(argv[i], "-print_cv")==0){
       *PRINT_CV=1;
-    }else if(strcmp(argv[i], "-print_id")==0){
-      PRINT_ID=1;
       //}else if(strcmp(argv[i], "-print_div_all")==0){
       //PRINT_DIV_ALL=1;
     }else if(strcmp(argv[i], "-print_div")==0){
@@ -2558,8 +2583,7 @@ float **Read_function(char *file_fun, struct Prot_input *Prot,
 int Find_prot(char *name, struct Prot_input *Prot, int *index, int N){
   for(int i=0; i<N; i++){
     int i1=index[i];
-    if((strncmp(name, Prot[i1].name, 4)==0)&&(name[4]==Prot[i1].chain))
-      return(i);
+    if(strncmp(name, Prot[i1].domname, 5)==0){return(i);}
   }
   return(-1);
 }
@@ -2593,11 +2617,13 @@ void Summary_identical(FILE *file_id, int it_opt)
   name_c[1]=malloc(9*sizeof(char)); strcpy(name_c[1], "mct");
   name_ct[0]=malloc(20*sizeof(char)); strcpy(name_ct[0], "few contacts");
   name_ct[1]=malloc(20*sizeof(char)); strcpy(name_ct[1], "many contacts");
-  fprintf(file_id,"# ali=aligned, ide=identical aa,");
-  fprintf(file_id," sup=superimposed in space, d<d0(TM)/2");
-  fprintf(file_id," cons cont=conserved contact\n");
-  fprintf(file_id,"# fct=residues with few structural contacts,");
-  fprintf(file_id," mct= many contacts\n");
+  fprintf(file_id,
+	  "# ali=aligned, ide=identical aa,"
+	  " sup=superimposed in space, d<d0(TM)/2"
+	  " cons cont=conserved contact\n"
+	  "# fct=residues with few structural contacts,"
+	  " mct= many contacts\n");
+  fprintf(file_id,"# %d alignments tested\n", PTYPE+1); 
   fprintf(file_id,"# npairs= %d (pdb) %d (seq)\n", npair_pdb, npair_seq);
   for(i=1; i<PTYPE; i++){
     if(i==code[2] || i==code[3] || i==code[4]) 
@@ -2652,66 +2678,84 @@ void Summary_identical(FILE *file_id, int it_opt)
 
   int npair=npair_pdb, mult=0;
   for(int it=0; it<=PTYPE; it++){
-    int i=it, it1=it;
-    if(ALL_TYPES){if(it==PTYPE){i=it_opt; it1=it_opt; mult=1;}}
-    else if(it>=CTYPE){break;}
-    else if(it){i=it_opt; it1=1; mult=1;}
+    int i=it;
+    if(ALL_TYPES==0){
+      if(it!=0 && it!=PTYPE){continue;}
+      if(it==PTYPE){i=1;}
+    }
+    if(it==PTYPE){
+      mult=1;
+    }
+
+    /*if(ALL_TYPES){
+      if(it==PTYPE){i=it_opt; it1=it_opt; mult=1;}
+      }else if(it>=CTYPE){
+      break;
+      }else if(it){
+      i=it_opt; it1=1; mult=1;
+      }*/
+
+    fprintf(file_id,"# it= %d it_opt= %d i= %d mult= %d ALL=%d\n",
+	    it, it_opt, i, mult, ALL_TYPES);
 
     char *ali_name_i=ali_name[it];
     if(mult){npair=npair_seq; ali_name_i=ali_name[it_opt];}
 
     float nind=sqrt(2*npair_seq+0.25)+0.5;
-    for(int jt=0; jt<i; jt++){
-      int j=jt; 
-
-      if(Sim_ave[0][j]==0){continue;} double d1, d2;
-      fprintf(file_id, "# Diff_ali_%s_vs_%s:", ali_name[j],ali_name_i);
-      d1=Ave_se(&d2, Sim_diff[1][it1][j], Sim_diff_2[1][it1][j], npair, nind);
-      fprintf(file_id, "\tSI: %.4f %.4f", d1, d2);
-      d1=Ave_se(&d2, Sim_diff[2][it1][j], Sim_diff_2[2][it1][j], npair, nind);
-      fprintf(file_id, "\tTM: %.4f %.4f", d1, d2);
-      d1=Ave_se(&d2, Sim_diff[3][it1][j], Sim_diff_2[3][it1][j], npair, nind);
-      fprintf(file_id, "\tCO: %.4f %.4f", d1, d2);
-      d1=Ave_se(&d2, Sim_diff[4][it1][j], Sim_diff_2[4][it1][j], npair, nind);
-      fprintf(file_id, "\tPC: %.4f %.4f", d1, d2);
-      d1=Ave_se(&d2, Sim_diff[0][it1][j], Sim_diff_2[0][it1][j], npair, nind);
-      fprintf(file_id, "\tali: %.4f %.4f\n", d1, d2);
-    }
-
     fprintf(file_id,"######## %s alignment\n", ali_name_i);
-    fprintf(file_id, "### Pairwise scores:\n");
-    fprintf(file_id, "# Mean ali: %.4g\n", Sim_ave[0][i]/npair);
-    fprintf(file_id, "# Mean SI:  %.4f\n", Sim_ave[1][i]/npair);
-    fprintf(file_id, "# Mean TM:  %.4f\n", Sim_ave[2][i]/npair);
-    fprintf(file_id, "# Mean CO:  %.4f\n", Sim_ave[3][i]/npair);
-    fprintf(file_id, "# Mean PC:  %.4g\n", Sim_ave[4][i]/npair);
-    fprintf(file_id, "### Conservation across all residues:\n");
+    fprintf(file_id, "### Average pairwise scores:\n");
+    fprintf(file_id, "Mean ali: %.4g\n", Sim_ave[0][i]/npair);
+    fprintf(file_id, "Mean SI:  %.4f\n", Sim_ave[1][i]/npair);
+    fprintf(file_id, "Mean TM:  %.4f\n", Sim_ave[2][i]/npair);
+    fprintf(file_id, "Mean CO:  %.4f\n", Sim_ave[3][i]/npair);
+    fprintf(file_id, "Mean PC:  %.4g\n", Sim_ave[4][i]/npair);
 
+    fprintf(file_id, "### Differences between alignments:\n");
+    for(int j=0; j<i; j++){
+      if(Sim_ave[0][j]==0){continue;} double d1, d2;
+      fprintf(file_id, "Diff_ali_%s_vs_%s:", ali_name[j],ali_name_i);
+      d1=Ave_se(&d2, Sim_diff[1][i][j], Sim_diff_2[1][i][j], npair, nind);
+      fprintf(file_id, "\tSI: %.4f %.4f", d1, d2);
+      d1=Ave_se(&d2, Sim_diff[2][i][j], Sim_diff_2[2][i][j], npair, nind);
+      fprintf(file_id, "\tTM: %.4f %.4f", d1, d2);
+      d1=Ave_se(&d2, Sim_diff[3][i][j], Sim_diff_2[3][i][j], npair, nind);
+      fprintf(file_id, "\tCO: %.4f %.4f", d1, d2);
+      d1=Ave_se(&d2, Sim_diff[4][i][j], Sim_diff_2[4][i][j], npair, nind);
+      fprintf(file_id, "\tPC: %.4f %.4f", d1, d2);
+      d1=Ave_se(&d2, Sim_diff[0][i][j], Sim_diff_2[0][i][j], npair, nind);
+      fprintf(file_id, "\tali: %.4f %.4f\n", d1, d2);
+    } // end pairs of alignments
+
+
+    fprintf(file_id, "### Conservation across all residues:\n");
     double sum, tot, sum_all[2], tot_all=0, re2;
     for(k=0; k<2; k++){
       sum_all[k]=Sum_bins(sum_all_ct[i][k]);
       tot_all+=sum_all[k];
     }
-    if(tot_all==0)continue;
+    if(tot_all==0){
+      fprintf(file_id, "# ERROR tot_all= %.0f\n", tot_all);
+      continue;
+    }
 
     double sum_ali[2];
     for(k=0; k<2; k++)sum_ali[k]=Sum_bins(sum_ali_ct[i][k]);
     ave=Mean_freq(&se, &re2, sum_ali[0]+sum_ali[1], tot_all);
-    fprintf(file_id,"# Frac_ali_vs_all:\t%.4f se %.4f n %.0f\t",
+    fprintf(file_id,"Frac_ali_vs_all:\t%.4f se %.4f n %.0f\t",
 	    ave, se, tot_all);
     fprintf(file_id,"P(aligned)\n");  
 
     double sum_ide[2];
     for(k=0; k<2; k++)sum_ide[k]=Sum_bins(sum_aaid_ct[i][k]);
     ave=Mean_freq(&se, &re2, sum_ide[0]+sum_ide[1], tot_all);
-    fprintf(file_id,"# Frac_ide_vs_all:\t%.4f se %.4f n %.0f\t",
+    fprintf(file_id,"Frac_ide_vs_all:\t%.4f se %.4f n %.0f\t",
 	    ave, se, tot_all);
     fprintf(file_id,"P(identical)\n");  
     
     double sum_sup[2];
     for(k=0; k<2; k++)sum_sup[k]=Sum_bins(sum_sup_ct[i][k]);
     ave=Mean_freq(&se, &re2, sum_sup[0]+sum_sup[1], tot_all);
-    fprintf(file_id,"# Frac_sup_vs_all:\t%.4f se %.4f n %.0f\t",
+    fprintf(file_id,"Frac_sup_vs_all:\t%.4f se %.4f n %.0f\t",
 	    ave, se, tot_all);
     fprintf(file_id,"P(superimposed)\n");  
     
@@ -2722,7 +2766,7 @@ void Summary_identical(FILE *file_id, int it_opt)
       sum+=sum_id_cont[k]; tot+=sum_ali_cont[k];
     }
     ave=Mean_freq(&se, &re2, sum, tot);
-    fprintf(file_id,"# Frac_cons_cont:\t%.4f se %.4f n %.0f\t",
+    fprintf(file_id,"Frac_cons_cont:\t%.4f se %.4f n %.0f\t",
 	    ave, se, tot);
     fprintf(file_id, "P(conserved cont) norm. by all cont\n");
 
@@ -2730,21 +2774,21 @@ void Summary_identical(FILE *file_id, int it_opt)
     // As a function of the number of contacts
     for(k=0; k<2; k++){
       ave=Mean_freq(&se, &re2, sum_ali[k], sum_all[k]);
-      fprintf(file_id,"# Frac_ali_vs_all_%s:\t%.4f se %.4f n %.0f\t",
+      fprintf(file_id,"Frac_ali_vs_all_%s:\t%.4f se %.4f n %.0f\t",
 	      name_c[k], ave, se, sum_all[k]);
       fprintf(file_id,"P(aligned | %s)\n", name_ct[k]);  
     }
     
     for(k=0; k<2; k++){
       ave=Mean_freq(&se, &re2, sum_ide[k], sum_ali[k]);
-      fprintf(file_id,"# Frac_ide_vs_ali_%s:\t%.4f se %.4f n %.0f\t",
+      fprintf(file_id,"Frac_ide_vs_ali_%s:\t%.4f se %.4f n %.0f\t",
 	      name_c[k], ave, se, sum_ali[k]);
       fprintf(file_id,"P(identical | aligned, %s)\n", name_ct[k]);  
     }
 
     for(k=0; k<2; k++){
       ave=Mean_freq(&se, &re2, sum_sup[k], sum_ali[k]);
-      fprintf(file_id,"# Frac_sup_vs_ali_%s:\t%.4f se %.4f n %.0f\t",
+      fprintf(file_id,"Frac_sup_vs_ali_%s:\t%.4f se %.4f n %.0f\t",
 	      name_c[k], ave, se, sum_ali[k]);
       fprintf(file_id,"P(superimposed | aligned, %s)\n", name_ct[k]);  
     }
@@ -2752,7 +2796,7 @@ void Summary_identical(FILE *file_id, int it_opt)
     for(k=0; k<2; k++){
       ave=Mean_freq(&se, &re2, sum_id_cont[k], sum_ali_cont[k]);
       fprintf(file_id,
-	      "# Frac_cons_cont_vs_ali_%s:\t%.4f se %.4f n %.0f\t",
+	      "Frac_cons_cont_vs_ali_%s:\t%.4f se %.4f n %.0f\t",
 	      name_c[k], ave, se, sum_ali_cont[k]);
       fprintf(file_id,"P(conserved cont | aligned cont, %s)\n", name_ct[k]);  
     }       
@@ -2765,20 +2809,20 @@ void Summary_identical(FILE *file_id, int it_opt)
       sum_neigh_noali[k]=Sum_bins(sum_neigh_noali_ct[i][k]);
       tot_neigh[k]=sum_neigh_ali[k]+sum_neigh_noali[k];
       ave=Mean_freq(&se, &re2, tot_neigh[k], sum_ali[k]);
-      fprintf(file_id,"# Frac_neigh_vs_ali_%s:\t%.4f se %.4f n %.0f\t",
+      fprintf(file_id,"Frac_neigh_vs_ali_%s:\t%.4f se %.4f n %.0f\t",
 	      name_c[k], ave, se, sum_ali[k]);
       fprintf(file_id,"P(neigh| %s) aligned or not\n", name_ct[k]);  
     }
     
     for(k=0; k<2; k++){
       ave=Mean_freq(&se, &re2, sum_neigh_noali[k], tot_neigh[k]);
-      fprintf(file_id,"# Frac_neigh_noali_vs_neigh_%s:\t%.4f se %.4f n %.0f\t",
+      fprintf(file_id,"Frac_neigh_noali_vs_neigh_%s:\t%.4f se %.4f n %.0f\t",
 	      name_c[k], ave, se, tot_neigh[k]);
       fprintf(file_id,"P(neigh, not ali| neigh, %s)\n", name_ct[k]);
       /*sum=0; for(j=0; j<=IBIN; j++)sum+=sum_neigh_noali_aaid_ct[i][k][j];
       ave=Mean_freq(&se, &re2, sum, sum_neigh_noali[k]);
       fprintf(file_id,
-	    "# Frac_neigh_noali_id_ali_vs_neigh_noali:\t%.4f se %.4f n %.0f\t",
+	    "Frac_neigh_noali_id_ali_vs_neigh_noali:\t%.4f se %.4f n %.0f\t",
 	    ave, se, sum);
 	    fprintf(file_id,"P(id ali | neighb not ali)\n");  */
     }
@@ -2786,7 +2830,7 @@ void Summary_identical(FILE *file_id, int it_opt)
     for(k=0; k<2; k++){
       sum=Sum_bins(sum_sup_noneigh_ct[i][k]);
       ave=Mean_freq(&se, &re2, sum, sum_sup[k]);
-      fprintf(file_id,"# Frac_sup_noneigh_vs_sup_%s:\t%.4f se %.4f n %.0f\t",
+      fprintf(file_id,"Frac_sup_noneigh_vs_sup_%s:\t%.4f se %.4f n %.0f\t",
 	      name_c[k], ave, se, sum_sup[k]);
       double sum_shift=Sum_bins(sum_shift_sup_noneigh_ct[i][k]);
       if(sum)sum_shift/=sum;
@@ -2808,7 +2852,7 @@ void Summary_identical(FILE *file_id, int it_opt)
       double noid=sum_ali[k]-sum_ide[k];
       double P_sup_noid=Mean_freq(&se, &re2B, sup_noid, noid);
       ratio=P_sup_id/P_sup_noid; ser=ratio*sqrt(re2A+re2B);
-      fprintf(file_id,"# P(sup|ide)/P(sup|no id)_%s:", name_c[k]);
+      fprintf(file_id,"P(sup|ide)/P(sup|no id)_%s:", name_c[k]);
       fprintf(file_id,"\t%.4f se %.4f n %.0f %.0f\n",
 	      ratio, ser, sum_ide[k], noid);
 
@@ -2817,7 +2861,7 @@ void Summary_identical(FILE *file_id, int it_opt)
       double nosup_id=nosup-sum_noid_nosup[k];   
       double P_nosup_id=Mean_freq(&se, &re2B, nosup_id, sum_ide[k]);
       ratio=P_nosup_noid/P_nosup_id; ser=ratio*sqrt(re2A+re2B);
-      fprintf(file_id,"# P(no sup|no id)/P(no sup|id)_%s:", name_c[k]);
+      fprintf(file_id,"P(no sup|no id)/P(no sup|id)_%s:", name_c[k]);
       fprintf(file_id,"\t%.4f se %.4f n %.0f %.0f\n",
 	      ratio, ser, noid, sum_ide[k]);
 
@@ -2825,7 +2869,7 @@ void Summary_identical(FILE *file_id, int it_opt)
       double id_nosup=sum_ide[k]-sum_id_sup[k];
       double P_id_nosup=Mean_freq(&se, &re2B, id_nosup, nosup);
       ratio=P_id_sup/P_id_nosup; ser=ratio*sqrt(re2A+re2B);
-      fprintf(file_id,"# P(ide|sup)/P(ide|no sup)_%s:", name_c[k]);
+      fprintf(file_id,"P(ide|sup)/P(ide|no sup)_%s:", name_c[k]);
       fprintf(file_id,"\t%.4f se %.4f n %.0f %.0f\n",
 	      ratio, ser, sum_sup[k], nosup);
 
@@ -2833,7 +2877,7 @@ void Summary_identical(FILE *file_id, int it_opt)
       double noid_sup=noid-sum_noid_nosup[k];
       double P_noid_sup=Mean_freq(&se, &re2B, noid_sup, sum_sup[k]);
       ratio=P_noid_nosup/P_noid_sup; ser=ratio*sqrt(re2A+re2B);
-      fprintf(file_id,"# P(no id|no sup)/P(no id|sup)_%s:", name_c[k]);
+      fprintf(file_id,"P(no id|no sup)/P(no id|sup)_%s:", name_c[k]);
       fprintf(file_id,"\t%.4f se %.4f n %.0f %.0f\n",
 	      ratio, ser, nosup, sum_sup[k]);
 
@@ -2868,68 +2912,68 @@ void Summary_identical(FILE *file_id, int it_opt)
     double sum_a2=2*(ali_cont_aaid[0]+ali_cont_aaid[1]+ali_cont_aaid[2]);
     double re2ic=0, Pic=Mean_freq(&se, &re2ic, sum_i, sum_a2),
       re2noic=re2ic*(1-Pic)/Pic;
-    fprintf(file_id, "P(id|cont)/P(id)= %.3f\n", Pic/Pi);
+    fprintf(file_id, "P(id|cont)/P(id)= %.4f se %.2g\n", Pic/Pi, se/Pi);
     sum_s=ali_cont_sup[1]+2*ali_cont_sup[2];
     sum_a2=2*(ali_cont_sup[0]+ali_cont_sup[1]+ali_cont_sup[2]);
     double re2sc=0, Psc=Mean_freq(&se, &re2sc, sum_s, sum_a2),
       re2nosc=re2sc*(1-Psc)/Psc;
-    fprintf(file_id, "P(sup|cont)/P(sup)= %.3f\n", Psc/Ps);
+    fprintf(file_id, "P(sup|cont)/P(sup)= %.4f se %.2g\n", Psc/Ps, se/Ps);
 
     // Correlated substitutions
     sum=2*ali_cont_aaid[0]+ali_cont_aaid[1];
     double PA=Mean_freq(&se, &re2A, 2*ali_cont_aaid[0], sum);
     ratio=PA/(1-Pic); ser=ratio*sqrt(re2A+re2noic);
-    fprintf(file_id,"# P(no id|cont no id)/P(no id):");
-    fprintf(file_id,"\t%.2f se %.2f n %.0f %.0f\n",ratio,ser, sum, sum_a);
+    fprintf(file_id,"P(no id|cont no id)/P(no id):");
+    fprintf(file_id,"\t%.4f se %.2g n %.0f %.0f\n",ratio,ser, sum, sum_a);
 
     //sum=2*ali_cont_aaid[0]+ali_cont_aaid[1];
     PA=Mean_freq(&se, &re2A, ali_cont_aaid[1], sum);
     ratio=PA/Pic; ser=ratio*sqrt(re2A+re2ic);
-    fprintf(file_id,"# P(id|cont no id)/P(id):");
-    fprintf(file_id,"\t%.2f se %.2f n %.0f %.0f\n", ratio,ser, sum, sum_a);
+    fprintf(file_id,"P(id|cont no id)/P(id):");
+    fprintf(file_id,"\t%.4f se %.2g n %.0f %.0f\n", ratio,ser, sum, sum_a);
 
     sum=ali_cont_aaid[1]+2*ali_cont_aaid[2];
     PA=Mean_freq(&se, &re2A, 2*ali_cont_aaid[2], sum);
     ratio=PA/Pic; ser=ratio*sqrt(re2A+re2ic);
-    fprintf(file_id,"# P(id|cont id)/P(id):");
-    fprintf(file_id,"\t%.2f se %.2f n %.0f %.0f\n", ratio,ser, sum, sum_a);
+    fprintf(file_id,"P(id|cont id)/P(id):");
+    fprintf(file_id,"\t%.4f se %.2g n %.0f %.0f\n", ratio,ser, sum, sum_a);
 
     //sum=ali_cont_aaid[1]+2*ali_cont_aaid[2];
     PA=Mean_freq(&se, &re2A, ali_cont_aaid[1], sum);
     ratio=PA/(1-Pic); ser=ratio*sqrt(re2A+re2noic);
-    fprintf(file_id,"# P(no id|cont id)/P(no id):");
-    fprintf(file_id,"\t%.2f se %.2f n %.0f %.0f\n", ratio,ser, sum, sum_a);
+    fprintf(file_id,"P(no id|cont id)/P(no id):");
+    fprintf(file_id,"\t%.4f se %.2g n %.0f %.0f\n", ratio,ser, sum, sum_a);
 
     sum=2*ali_cont_sup[0]+ali_cont_sup[1];
     PA=Mean_freq(&se, &re2A, 2*ali_cont_sup[0], sum);
     ratio=PA/(1-Psc); ser=ratio*sqrt(re2A+re2nosc);
-    fprintf(file_id,"# P(no sup|cont no sup)/P(no sup):");
-    fprintf(file_id,"\t%.2f se %.2f n %.0f %.0f\n", ratio,ser, sum, sum_a);
+    fprintf(file_id,"P(no sup|cont no sup)/P(no sup):");
+    fprintf(file_id,"\t%.4f se %.2g n %.0f %.0f\n", ratio,ser, sum, sum_a);
 
     //sum=2*ali_cont_sup[0]+ali_cont_sup[1];
     PA=Mean_freq(&se, &re2A, ali_cont_sup[1], sum);
     ratio=PA/Psc; ser=ratio*sqrt(re2A+re2sc);
-    fprintf(file_id,"# P(sup|cont no sup)/P(sup):");
-    fprintf(file_id,"\t%.2f se %.2f n %.0f %.0f\n", ratio,ser, sum, sum_a);
+    fprintf(file_id,"P(sup|cont no sup)/P(sup):");
+    fprintf(file_id,"\t%.4f se %.2g n %.0f %.0f\n", ratio,ser, sum, sum_a);
 
     sum=ali_cont_sup[1]+2*ali_cont_sup[2];
     PA=Mean_freq(&se, &re2A, 2*ali_cont_sup[2], sum);
     ratio=PA/Psc; ser=ratio*sqrt(re2A+re2sc);
-    fprintf(file_id,"# P(sup|cont sup)/P(sup):");
-    fprintf(file_id,"\t%.2f se %.2f n %.0f %.0f\n", ratio,ser, sum, sum_a);
+    fprintf(file_id,"P(sup|cont sup)/P(sup):");
+    fprintf(file_id,"\t%.4f se %.2g n %.0f %.0f\n", ratio,ser, sum, sum_a);
 
     //sum=ali_cont_sup[1]+2*ali_cont_sup[2];
     PA=Mean_freq(&se, &re2A, ali_cont_sup[1], sum);
     ratio=PA/(1-Psc); ser=ratio*sqrt(re2A+re2nosc);
-    fprintf(file_id,"# P(no sup|cont sup)/P(no sup):");
-    fprintf(file_id,"\t%.2f se %.2f n %.0f %.0f\n", ratio,ser, sum, sum_a);
+    fprintf(file_id,"P(no sup|cont sup)/P(no sup):");
+    fprintf(file_id,"\t%.4f se %.2g n %.0f %.0f\n", ratio,ser, sum, sum_a);
 
     fprintf(file_id, "### Conditional probability conserved contact | sup:\n");
     double P_cons_cont_sup[3], re2ccs[3];
     for(k=0; k<3; k++){
       P_cons_cont_sup[k]=
 	Mean_freq(&se, re2ccs+k, id_cont_sup[k], ali_cont_sup[k]);
-      fprintf(file_id,"# Frac_cons_cont_vs_%d_sup:\t%.4f se %.4f n %.0f\t",
+      fprintf(file_id,"Frac_cons_cont_vs_%d_sup:\t%.4f se %.4f n %.0f\t",
 	      k, P_cons_cont_sup[k], se, ali_cont_sup[k]);
       fprintf(file_id, "P(conserved cont | %d sup res)\n",k);
     }
@@ -2941,7 +2985,7 @@ void Summary_identical(FILE *file_id, int it_opt)
     for(k=0; k<3; k++){
       P_cons_cont_aaid[k]=
 	Mean_freq(&se, re2cca+k, id_cont_aaid[k], ali_cont_aaid[k]);
-      fprintf(file_id,"# Frac_cons_cont_vs_%d_id:\t%.4f se %.4f n %.0f\t",
+      fprintf(file_id,"Frac_cons_cont_vs_%d_id:\t%.4f se %.4f n %.0f\t",
 	      k, P_cons_cont_aaid[k], se, ali_cont_aaid[k]);
       fprintf(file_id, "P(conserved cont | %d identical aa)\n",k);
     }
@@ -2951,20 +2995,20 @@ void Summary_identical(FILE *file_id, int it_opt)
     fprintf(file_id, "### Propensity conserved contact - identical:\n");
     ratio=P_cons_cont_aaid[2]/(P_cons_cont_aaid[0]);
     ser=ratio*sqrt(re2cca[2]+re2cca[0]);
-    fprintf(file_id,"# P(cons cont|2 ide)/P(cons cont|0 ide):");
+    fprintf(file_id,"P(cons cont|2 ide)/P(cons cont|0 ide):");
     fprintf(file_id,"\t%.4f se %.4f n %.0f %.0f\n",
 	      ratio, ser, ali_cont_aaid[2], ali_cont_aaid[0]+ali_cont_aaid[1]);
     //
     //
     ratio=(1-P_cons_cont_aaid[1])/(1-P_cons_cont_aaid[2]);
     ser=ratio*sqrt(re2cca[2]+re2cca[0]);
-    fprintf(file_id,"# P(chg cont|1 ide)/P(chg cont|2 ide):");
+    fprintf(file_id,"P(chg cont|1 ide)/P(chg cont|2 ide):");
     fprintf(file_id,"\t%.4f se %.4f n %.0f %.0f\n",
 	      ratio, ser, ali_cont_aaid[1], ali_cont_aaid[2]);
     //
     ratio=(1-P_cons_cont_aaid[0])/(1-P_cons_cont_aaid[2]);
     ser=ratio*sqrt(re2cca[2]+re2cca[0]);
-    fprintf(file_id,"# P(chg cont|0 ide)/P(chg cont|2 ide):");
+    fprintf(file_id,"P(chg cont|0 ide)/P(chg cont|2 ide):");
     fprintf(file_id,"\t%.4f se %.4f n %.0f %.0f\n",
 	      ratio, ser, ali_cont_aaid[0], ali_cont_aaid[2]);
     //
@@ -2972,7 +3016,7 @@ void Summary_identical(FILE *file_id, int it_opt)
     double P_2aaid_ch_cont=
       Mean_freq(&se, &re2B,ali_cont_aaid[2]-id_cont_aaid[2], ali_cont-id_cont);
     ratio=P_2aaid_id_cont/P_2aaid_ch_cont; ser=ratio*sqrt(re2A+re2B);
-    fprintf(file_id,"# P(2 ide|cons cont)/P(2 ide|chg cont):");
+    fprintf(file_id,"P(2 ide|cons cont)/P(2 ide|chg cont):");
     fprintf(file_id,"\t%.4f se %.4f n %.0f %.0f\n",
 	      ratio, ser, id_cont, ali_cont-id_cont);
     //
@@ -2980,7 +3024,7 @@ void Summary_identical(FILE *file_id, int it_opt)
     double P_1aaid_ch_cont=
       Mean_freq(&se, &re2B,ali_cont_aaid[1]-id_cont_aaid[1], ali_cont-id_cont);
     ratio=P_1aaid_ch_cont/P_1aaid_id_cont; ser=ratio*sqrt(re2A+re2B);
-    fprintf(file_id,"# P(1 ide|chg cont)/P(1 ide|cons cont):");
+    fprintf(file_id,"P(1 ide|chg cont)/P(1 ide|cons cont):");
     fprintf(file_id,"\t%.4f se %.4f n %.0f %.0f\n",
     ratio, ser, ali_cont-id_cont, id_cont);
     //
@@ -2988,7 +3032,7 @@ void Summary_identical(FILE *file_id, int it_opt)
     double P_0aaid_ch_cont=
       Mean_freq(&se, &re2B,ali_cont_aaid[0]-id_cont_aaid[0], ali_cont-id_cont);
     ratio=P_0aaid_ch_cont/P_0aaid_id_cont; ser=ratio*sqrt(re2A+re2B);
-    fprintf(file_id,"# P(0 ide|chg cont)/P(0 ide|cons cont):");
+    fprintf(file_id,"P(0 ide|chg cont)/P(0 ide|cons cont):");
     fprintf(file_id,"\t%.4f se %.4f n %.0f %.0f\n",
 	      ratio, ser, ali_cont-id_cont, id_cont);
 
@@ -2996,19 +3040,19 @@ void Summary_identical(FILE *file_id, int it_opt)
     fprintf(file_id, "### Propensity conserved contact - superimposed:\n");
     ratio=P_cons_cont_sup[2]/P_cons_cont_sup[0];
     ser=ratio*sqrt(re2ccs[2]+re2ccs[0]);
-    fprintf(file_id,"# P(cons cont|2 sup)/P(cons cont|0 sup):");
+    fprintf(file_id,"P(cons cont|2 sup)/P(cons cont|0 sup):");
     fprintf(file_id,"\t%.4f se %.4f n %.0f %.0f\n",
 	      ratio, ser, ali_cont_sup[2], ali_cont_sup[0]);
     //
     ratio=(1-P_cons_cont_sup[1])/(1-P_cons_cont_sup[2]);
     ser=ratio*sqrt(re2ccs[2]+re2ccs[1]);
-    fprintf(file_id,"# P(chg cont|1 sup)/P(chg cont|2 sup):");
+    fprintf(file_id,"P(chg cont|1 sup)/P(chg cont|2 sup):");
     fprintf(file_id,"\t%.4f se %.4f n %.0f %.0f\n",
 	      ratio, ser, ali_cont_sup[1], ali_cont_sup[2]);
     //
     ratio=(1-P_cons_cont_sup[0])/(1-P_cons_cont_sup[2]);
     ser=ratio*sqrt(re2ccs[2]+re2ccs[0]);
-    fprintf(file_id,"# P(chg cont|0 sup)/P(chg cont|2 sup):");
+    fprintf(file_id,"P(chg cont|0 sup)/P(chg cont|2 sup):");
     fprintf(file_id,"\t%.4f se %.4f n %.0f %.0f\n",
 	      ratio, ser, ali_cont_sup[0], ali_cont_sup[2]);
     //
@@ -3016,7 +3060,7 @@ void Summary_identical(FILE *file_id, int it_opt)
     double P_2sup_ch_cont=
       Mean_freq(&se, &re2B,ali_cont_sup[2]-id_cont_sup[2], ali_cont-id_cont);
     ratio=P_2sup_id_cont/P_2sup_ch_cont; ser=ratio*sqrt(re2A+re2B);
-    fprintf(file_id,"# P(2 sup|cons cont)/P(2 sup|chg cont):");
+    fprintf(file_id,"P(2 sup|cons cont)/P(2 sup|chg cont):");
     fprintf(file_id,"\t%.4f se %.4f n %.0f %.0f\n",
 	      ratio, ser, id_cont, ali_cont-id_cont);
     //
@@ -3024,7 +3068,7 @@ void Summary_identical(FILE *file_id, int it_opt)
     double P_1sup_ch_cont=
       Mean_freq(&se, &re2B,ali_cont_sup[1]-id_cont_sup[1], ali_cont-id_cont);
     ratio=P_1sup_ch_cont/P_1sup_id_cont; ser=ratio*sqrt(re2A+re2B);
-    fprintf(file_id,"# P(1 sup|chg cont)/P(1 sup|cons cont):");
+    fprintf(file_id,"P(1 sup|chg cont)/P(1 sup|cons cont):");
     fprintf(file_id,"\t%.4f se %.4f n %.0f %.0f\n",
 	      ratio, ser, ali_cont-id_cont, id_cont);
     //
@@ -3032,7 +3076,7 @@ void Summary_identical(FILE *file_id, int it_opt)
     double P_0sup_ch_cont=
       Mean_freq(&se, &re2B,ali_cont_sup[0]-id_cont_sup[0], ali_cont-id_cont);
     ratio=P_0sup_ch_cont/P_0sup_id_cont; ser=ratio*sqrt(re2A+re2B);
-    fprintf(file_id,"# P(0 sup|chg cont)/P(0 sup|cons cont):");
+    fprintf(file_id,"P(0 sup|chg cont)/P(0 sup|cons cont):");
     fprintf(file_id,"\t%.4f se %.4f n %.0f %.0f\n",
 	      ratio, ser, ali_cont-id_cont, id_cont);
 
@@ -3281,8 +3325,11 @@ char **Assign_Seq(char ***name_seq, int *len_seq,
     if(k!=Li){
       printf("ERROR in Assign_seq, L= %d %d\n", Li, k); exit(8);
     }
-    (*name_seq)[i]=malloc(20*sizeof(char));
-    sprintf((*name_seq)[i], "%s%c", proti->name, proti->chain);
+    (*name_seq)[i]=malloc(200*sizeof(char));
+    //strcpy((*name_seq)[i], proti->domname);
+    sprintf((*name_seq)[i], "%s %c %s",
+	    proti->domname, proti->chain, proti->domain);
+    
   }
   return(Seq);
 }
@@ -3380,6 +3427,7 @@ void Initialize_prot(struct protein *prot){
   prot->n_atom=NULL;
   prot->xca_rot=NULL;
   prot->pdbres=NULL;
+  prot->seqres=NULL;
   prot->vec=NULL;
   prot->res_atom=NULL;
   //prot->seq2=NULL;
@@ -3389,7 +3437,7 @@ void Initialize_prot(struct protein *prot){
   prot->EC=NULL;
   prot->sec_el=NULL;
   sprintf(prot->name_file, "");
-  sprintf(prot->name, "");
+  sprintf(prot->code, "");
   prot->len=0;
   prot->nca=0;
   prot->N_cont=0;
@@ -3484,11 +3532,15 @@ void Score_alignment(float *nali, float *SI, float *TM, float *CO,
 		     struct protein *proti, struct protein *protj,
 		     float norm_c, float norm_ali, int it, int last)
 {
+  int comp_id=0;
+  if(PRINT_ID && ((ALL_TYPES && it<PTYPE) || it==0 || last)){comp_id=1;}
+
   if(ali_all && ali_all!=ali_ij){
     for(int s=0; s<proti->len; s++)ali_all[s]=ali_ij[s];
   }
 
   nali[it]=Count_ali(ali_ij, proti->len)/norm_ali;
+
   int diff=0;
   SI[it]=Seqid(&diff, ali_ij, id_aa[it],
 	       proti->aseq, proti->len,
@@ -3500,7 +3552,7 @@ void Score_alignment(float *nali, float *SI, float *TM, float *CO,
     TM[it]=TM_score(d2, d02, Rot, Shift, ali_ij, norm_ali, proti, protj, 0);
     //if(NORMA){TM[it]/=nali[it];}
     if(it==0 && INP_MSA && TMs>0)TM[it]=TM_all[it][i][j];
-  }else if(d2 && (it==0 || last)){
+  }else if(d2 && comp_id){
       All_distances(d2,proti->xca_rot,proti->len,protj->xca_rot,protj->len);
   }
   CO[it]=Contact_overlap(ali_ij,
@@ -3512,17 +3564,26 @@ void Score_alignment(float *nali, float *SI, float *TM, float *CO,
   if(DIV_ALIGNED){PC_div[it]=PC[it];}else{PC_div[it]/=PC_norm_div;}
 
   float *sim[5]; sim[0]=nali; sim[1]=SI; sim[2]=TM; sim[3]=CO; sim[4]=PC; 
-  if(last==0){
-    for(int k=0; k<5; k++){Sim_ave[k][it]+=sim[k][it];}
+  for(int k=0; k<5; k++){Sim_ave[k][it]+=sim[k][it];}
+
+  if(it<PTYPE || last){
+    int it1; if(it<PTYPE){it1=it;}else{it1=PTYPE;}
+    na_all[it1][i][j]=nali[it];
+    SI_all[it1][i][j]=SI[it];
+    TM_all[it1][i][j]=TM[it];
+    CO_all[it1][i][j]=CO[it];
+    PC_all[it1][i][j]=PC[it];
+    PC_div_all[it1][i][j]=PC_div[it];
   }
 
-  if((ALL_TYPES && it<PTYPE) || it==0 || last){
-    int it1=it, mult=0, c1, c2, ii, jj;
-    if(last){
+  if(comp_id){
+    int mult=0, it1=it;
+    if(it>=PTYPE){
       mult=1; if(ALL_TYPES){it1=PTYPE;}else{it1=1;}
     }
 
     // Compare alignments
+    int c1, c2; // ii, jj;
     float ***sim2[5]; sim2[0]=na_all; sim2[1]=SI_all;
     sim2[2]=TM_all; sim2[3]=CO_all; sim2[4]=PC_all;
     if(rep_str){
@@ -3533,44 +3594,34 @@ void Score_alignment(float *nali, float *SI, float *TM, float *CO,
     }
 
     for(int jt=0; jt<it1; jt++){
+      int ii, jj;
       if(mult && jt<PTYPE){ii=c2; jj=c1;}else{ii=i; jj=j;}
       for(int k=0; k<5; k++){
-	float d=sim2[k][jt][c2][c1]-sim[k][it];
+	float d=sim[k][it]-sim2[k][jt][ii][jj];
 	Sim_diff[k][it1][jt]+=d;
 	Sim_diff_2[k][it1][jt]+=d*d;
       }
     }
 
-    if(PRINT_ID){
-      Test_contacts(ali_ij, id_sup[it], c_ave,
-		    ali_cont_ct[it],  id_cont_ct[it],
-		    ali_cont_sup[it], id_cont_sup[it],
-		    ali_cont_aaid[it],id_cont_aaid[it],
-		    proti->Cont_map, proti->aseq, proti->ncont, proti->len,
-		    protj->Cont_map, protj->aseq, protj->ncont, protj->len);
-    }
-
     if(d2){
-      Examine_neighbors(d2, ali_ij, *d02, shift[it], id_sup[it],
-			neigh_ali[it],neigh_noali[it],neigh_noali_aaid[it],
+      Examine_neighbors(d2, ali_ij, *d02, shift[it1], id_sup[it1],
+			neigh_ali[it1],neigh_noali[it1],neigh_noali_aaid[it1],
 			proti->aseq, proti->len, protj->aseq, protj->len);
     }
-    
-    na_all[it1][i][j]=nali[it];
-    SI_all[it1][i][j]=SI[it];
-    TM_all[it1][i][j]=TM[it];
-    CO_all[it1][i][j]=CO[it];
-    PC_all[it1][i][j]=PC[it];
-    PC_div_all[it1][i][j]=PC_div[it];
 
-    if(PRINT_ID){
-      Write_identity(it1, proti, protj, ali_ij,
-		     id_aa[it], id_sup[it], shift[it],
-		     neigh_ali[it], neigh_noali[it], neigh_noali_aaid[it],
-		     ali_cont_ct[it], id_cont_ct[it],
-		     ali_cont_sup[it], id_cont_sup[it],
-		     ali_cont_aaid[it], id_cont_aaid[it]);
-    }
+    Test_contacts(ali_ij, id_sup[it1], c_ave,
+		  ali_cont_ct[it1],  id_cont_ct[it1],
+		  ali_cont_sup[it1], id_cont_sup[it1],
+		  ali_cont_aaid[it1],id_cont_aaid[it1],
+		  proti->Cont_map, proti->aseq, proti->ncont, proti->len,
+		  protj->Cont_map, protj->aseq, protj->ncont, protj->len);
+
+    Write_identity(it1, proti, protj, ali_ij,
+		   id_aa[it1], id_sup[it1], shift[it1],
+		   neigh_ali[it1], neigh_noali[it1], neigh_noali_aaid[it1],
+		   ali_cont_ct[it1], id_cont_ct[it1],
+		   ali_cont_sup[it1], id_cont_sup[it1],
+		   ali_cont_aaid[it1], id_cont_aaid[it1]);
   }
 }
 
