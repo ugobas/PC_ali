@@ -9,7 +9,7 @@ Email: <ubastolla@cbm.csic.es>
 PC_ali performs hybrid multiple structure and sequence alignments based on the structure+sequence similarity score PC_sim. Besides the MSA, it outputs pairwise similarity scores and divergence scores and neighbor-joining phylogenetic tree obtained with the hybrid evolutionary divergence measure based on PC_sim, and it outputs a pdb file with multiply superimposed structures. Optionally, it computes violations of the molecular clock for each pair of proteins.
 
 PC_ali takes as input:
-1) either a list of PDB files (option -pdblist, format: column1 filename col2 chain col3 directory 1 or 2 where the file is stored), or
+1) either a list of PDB files (option -pdblist, format: column1: pdb code or file name col2: chain col3: domain, ex. 1-222 col4: domain name col5: directory 1 or 2 where the file is stored), or
 2) not aligned sequences (option -seq), or
 3) an MSA (option -ali).
 In cases 2 and 3 PDB file names must be specified as sequence names.
@@ -29,6 +29,7 @@ PC_ali
   	-pdbext <extension of pdb files>  (default: .pdb)
 
 ## Optional parameters:
+	 -id Print statistics of conservation and changes (.id)
 	 -out <Name of output files> (default: alignment file)
   	 -sim_thr    <identity above which proteins are joined>
 	 -print_pdb    ! Print structure superimposition in PDB format
