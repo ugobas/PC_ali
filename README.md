@@ -19,7 +19,7 @@ It is not allowed to input both a list of PDB files and an MSA.
 ## Usage:
 PC_ali  
 
-	-pdblist <List of PDB files> Format: 1 file_name 2 chain 3 dir
+	-pdblist <List of PDB files> Format: 1 file_name 2 chain 3 domain 4 dom_name 5 dir (only file_name is mandatory)
 	-seq <sequences in FASTA format, with names of PDB files>
 	-ali <MSA file in FASTA format, with names of PDB files>
 	# The pdb code is optionally followed by the chain index, e.g. >1opd.pdb A or >1opdA or >1opd_A
@@ -81,9 +81,15 @@ They are printed in <>.prot.div for all pairs of protein sequences, and also for
 ## RUN:
 >PC_ali -seq <sequence file> -pdbdir <path to PDB files>
 
-## EXAMPLE: 
+## EXAMPLES:
+1) List of PDB files, chain, domain, dom_name, folder (only necessary PDB file name)
+PC_ali -pdblist 1.10.287.110.SI60.pdblist -pdbdir <PDBPATH>
+(all PDB files listed in 1.10.287.110.SI60.pdblist must be downloaded in current folder or in PDBPATH)
+2) Not aligned sequences in FASTA format, PDB file name specified in seq. name
 PC_ali -seq 50044_Mammoth.aln -pdbdir <PDBPATH>
-(all PDB files named in 50044_Mammoth.aln must be in <PDBPATH>)
+3) Aligned sequences in FASTA format, PDB file name specified in seq. name
+PC_ali -seq 50044_Mammoth.aln -pdbdir <PDBPATH>
+(all PDB files named in 50044_Mammoth.aln must be in current folder or in PDBPATH)
 
 ## OUTPUT:
 MSA (PCAli.fas),
