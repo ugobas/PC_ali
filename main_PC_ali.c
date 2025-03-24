@@ -130,7 +130,7 @@ struct Prot_input{
 // Alignments
 int ALL_TYPES=0; // Record for all ali types or only INP and PCAli-mult?
 int ATYPE=0, PTYPE=0, CTYPE=0, PT1;
-char *ali_name[NTYPE];
+char *ali_name[NTYPE+1];
 int code[NTYPE];
 static void Set_type(char **ali_name,int *code,int *ATYPE,char *name,int it);
 extern char *SS_code;
@@ -169,7 +169,6 @@ double c_ave; // Mean number of contacts per residue
 //double PC_load[4]={0.83,0.80,0.94,0.95}; // ali, SI, TM, CO
 double PC_load[4]={0.80,0.85,0.95,0.95};
 double PC0_1, PC_norm, PC_norm_div;
-char *ali_name[NTYPE];
 int opt_PC[NTYPE], Diff_opt[NTYPE];
 int npair_pdb=0, npair_seq=0;
 double sum_norm_c;
@@ -327,7 +326,7 @@ int main(int argc, char **argv)
       NMSA=NTYPE-PTYPE;
       printf("Reduce MSA to %d\n", NMSA);
     }
-    for(i=0; i<NMSA; i++){
+    for(i=0; i<=NMSA; i++){
       char name[15]; sprintf(name, "PC_M%d", i);
       Set_type(ali_name, code, &ATYPE, name, 6+i);
     }
@@ -1665,7 +1664,9 @@ void help(char *pname){
 	 "It includes a modification of the needlemanwunsch aligner programmed by Dr. Andrew C. R. Martin in the Profit suite of programs, (c) SciTech Software 1993-2007\n\n"
 	 "USAGE:\n"
 	 "PC_ali\n"
-	 "\t -pdblist <list of PDB files + chain labels>\n"
+	 "\t -pdblist <list of PDB files>"
+	 "  Format: file_name chain domain dom_name dir"
+	 " (only necessary file_name)\n"
 	 "\t -pbdir <directory of pdb files>  (default: current directory)\n"
 	 "\t -pbdir2 <2nd directory of pdb files>  (default: none)\n"
 	 "\t -pdbext <extension of pdb files>  (default: .pdb)\n\n"
@@ -1709,11 +1710,18 @@ void help(char *pname){
 	 ">cp PC_ali ~/bin/ (or whatever path directory you like)\n"
 	 "\n"
 	 "RUN:\n"
-	 "PC_ali -pdblist <list of PDB>"
-	 " -pdbdir <path to PDB files> -pdbdir2 <second path>"
-	 " -seq <sequence file> -pdbext .pdb\n\n"
-	 "EXAMPLE: PC_ali -seq 50044_Mammoth.aln -pdbdir <PDBPATH>\n"
-	 "(all PDB files named in 50044_Mammoth.aln must be in <PDBPATH>)\n\n");
+	 "1) with pdblist:\n"
+	 " >PC_ali -pdblist 1.10.287.110.SI60..pdblist"
+	 " -pdbdir <PDBPATH>\n"
+	 "(all files listed in 1.10.287.110.SI60..pdblist must be in "
+	 "current folder or in pdbdir)\n\n"
+	 "2) with not aligned sequenses:\n"
+	 ">PC_ali -seq 50044_Mammoth.aln -pdbdir <PDBPATH>\n"
+	 "(all PDB files named in 50044_Mammoth.aln must be in <PDBPATH>)\n\n"
+	 "3) with aligned sequenses:\n"
+	 ">PC_ali -ali 50044_Mammoth.aln -pdbdir <PDBPATH>\n"
+	 "(all PDB files named in 50044_Mammoth.aln must be in <PDBPATH>)\n\n"
+	 );
 
   printf("OUTPUT (for each pair of proteins):\n"
 	 "-------\n"
@@ -1847,45 +1855,51 @@ int Get_pdb_list(struct Prot_input **Prot_input, char *input)
     if((arg>1)&&(chain[0]!='\0')&&(chain[0]!='\n')){
       Pn->chain=chain[0];
     }
+
     // What is third column?
-    if(arg>=3){
-      if(isdom==-2){
-	// if contains - it is domain, if 1 or 2 it is dir
-	char *ptr=word3;
-	while(*ptr!='\0'){if(*ptr=='-'){isdom=1; break;} ptr++;}
-	if(isdom<0){
-	  sscanf(word3, "%d", &dir); if(dir==1 || dir==2){isdom=0;}
-	}
-      }
-      // Read dir
-      if(isdom==0){sscanf(word3, "%d", &dir);}
-      else if(arg<5){dir=1;}
-      if(dir==1 || dir==2){dir--;}
-      else{
-	printf("ERROR reading %s, dir (col 3 or 5) must be either 1 or 2\n"
-	       "Just read: %s", input, string); exit(8);
-      }
-      if(dir==1 && PDBDIR2[0]=='\0'){
-	printf("ERROR reading %s, dir (col 3 or 5) is 2 but "
-	       "PDBDIR2 not given\n",
-	       "Just read: %s", input, string); exit(8);
+    if(arg>=3 && isdom==-2){
+      // if contains - it is domain, if 1 or 2 it is dir
+      char *ptr=word3;
+      while(*ptr!='\0'){if(*ptr=='-'){isdom=1; break;} ptr++;}
+      if(isdom<0){
+	sscanf(word3, "%d", &dir); if(dir==1 || dir==2){isdom=0;}
       }
     }
-    Pn->dir=dir;
 
-    printf("file=%s chain=%c", Pn->code, Pn->chain);
+    // Read domain or dir
+    if(arg>=3){
+      if(isdom==1){
+	strcpy(Pn->domain, word3);
+	Pn->nfrag=Read_domain(&(Pn->ini_frag), &(Pn->end_frag), Pn->domain);
+	printf(" %d domains: %s", Pn->nfrag, Pn->domain);
+      }else if(isdom==0){
+	sscanf(word3, "%d", &dir);
+	printf(" folder=%d\n", dir);
+      }else{
+	printf("\nERROR, col 3 must be domain (ex. 1-78) or folder (1 or 2)\n"
+	       "isdom=%d\nJust read in %s:ºn %s", isdom, input, string);
+	exit(8);
+      }
+    }
+
+    // Check dir
+    if(dir==2 && PDBDIR2[0]=='\0'){
+      printf("ERROR reading %s, dir (col 3 or 5) is 2 but "
+	     "PDBDIR2 not given\n",
+	     "Just read: %s", input, string); exit(8);
+    }else if(dir!=1 && dir!=2){
+      printf("ERROR reading %s, dir (col 3 or 5) must be either 1 or 2\n"
+	     "Just read: %s", input, string); exit(8);
+    }
+    Pn->dir=dir-1;
+
     // Read domain
     if(arg>=4){strcpy(Pn->domname, domname);}
-    if(Pn->domname[0]=='\0'){
-      sprintf(Pn->domname, "%s%c",Pn->code, Pn->chain);
-    }
-    if(isdom==1){
-      strcpy(Pn->domain, word3);
-      Pn->nfrag=Read_domain(&(Pn->ini_frag), &(Pn->end_frag), Pn->domain);
-      printf(" %d domains: %s", Pn->nfrag, Pn->domain);
-      if(Pn->domname[0]){printf(" %s", Pn->domname);}
-    }
-    printf(" folder=%d\n", Pn->dir);
+    else{sprintf(Pn->domname, "%s%c",Pn->code, Pn->chain);}
+    printf(" %s", Pn->domname);
+
+    printf("file=%s chain=%c", Pn->code, Pn->chain);
+
     (*Prot_input)[n].seq=NULL;
     (*Prot_input)[n].len=0;
     n++;

@@ -8,14 +8,15 @@ PC_ali performs hybrid multiple structure and sequence alignments based on the s
 
 PC_ali takes as input:
 1) either a list of PDB files (option -pdblist, format: column1: pdb code or file name col2: chain col3: domain, ex. 1-222 col4: domain name col5: directory 1 or 2 where the file is stored), or
-2) not aligned sequences (option -seq), or
+2) not aligned sequences in FASTA format (option -seq), or
 3) an MSA (option -ali).
-In cases 2 and 3 PDB code or file name must be specified as sequence names.
-In case 1, the PDB files may be stored in two different folders. Folder 1 is input as -pdbdir, folder 2 is input as -pdbdir2, the folder of each PDB file (1 or 2) is specified in the 3rd column of the pdblist file (optional), default is folder 1. 
+In cases 2) and 3) PDB code or file name must be specified as sequence names.
+In case 1), the PDB files may be stored in two different folders. Folder 1 is input as -pdbdir, folder 2 is input as -pdbdir2, the folder of each PDB file (1 or 2) is specified in the 3rd column of the pdblist file (optional), default is folder 1. 
 It is not allowed to input both a list of PDB files and an MSA.
 
 Usage:
-PC_ali   -pdblist <List of PDB files> Format: 1 file_name 2 chain 3 dir 
+PC_ali   -pdblist <List of PDB files>
+	 Format: 1 file_name 2 chain 3 domain 4 name 5 dir (only file_name is mandatory) 
 	 -seq <sequences in FASTA format, with names of PDB files>
 	 -ali <MSA file in FASTA format, with names of PDB files>
 	# The pdb code is optionally followed by the chain index
@@ -25,17 +26,18 @@ PC_ali   -pdblist <List of PDB files> Format: 1 file_name 2 chain 3 dir
 	 -pbdir2 <2nd folder of pdb files>  (default: current directory)
 	 -pdbext <extension of pdb files>  (default: .pdb)
 #### Optional parameters:
+	 -print_div    ! Print divergence measures for pairs of proteins
+	 -print_pdb    ! Print structure superimposition in PDB format
+	 -print_sim    ! Print similarity measures for all pairs of structures
          -id Print statistics of conservation and changes (.id)
 	 -out <Name of output files> (default: alignment file)
-	 -clique     ! Initial alignment is based on cliques (may be slow)
+
 	 -ali_tm     ! Perform pairwise alignments that target TM score
 	 -ali_co     ! Perform pairwise alignments that target Contact Overlap
 	 -ali_ss     ! Perform alignments that target sec.structure
+	 -clique     ! Initial alignment is based on cliques (may be slow)
 	 -ss_mult    ! alignments that target sec.structure are MSA
 	 -shift_max <Maximum shift for targeting sec.str.>
-	 -print_pdb    ! Print structure superimposition in PDB format
-	 -print_sim    ! Print similarity measures for pairs of proteins
-	 -print_div    ! Print divergence measures for pairs of proteins
 	 -print_cv     ! Print molecular clock violations
 	 -func <file with function similarity for pairs of proteins>
 
@@ -66,22 +68,29 @@ Flux of the program:
 In the first pairwise phase, the program computes similarity and divergence scores for all pairs of protein structures. It then clusters all conformations of the same protein and computes the structural similarity (divergence) between two proteins as the maximum (minimum) across all the examined conformations.
 The similarity and divergence scores are computed for the starting alignment, for the modified pairwise alignments that target different similarity scores (TM score, contact overlap and PC_sim) and for the best multiple alignment.
 
-
 COMPILE:
 >unzip PC_ali.zip
 >make
 >cp PC_ali ~/bin/ (or whatever path directory you like)
 
 RUN:
->PC_ali -seq <sequence file> -pdbdir <path to PDB files>
+>PC_ali -pdblist <list of PDB files> -pdbdir <path to PDB files>
 
-EXAMPLE: PC_ali -seq 50044_Mammoth.aln -pdbdir <PDBPATH>
-(all PDB files named in 50044_Mammoth.aln must be in <PDBPATH>)
+EXAMPLES:
+1) List of PDB files, chain, domain, dom_name, folder (only necessary PDB file name)
+PC_ali -pdblist 1.10.287.110.SI60.pdblist -pdbdir <PDBPATH>
+(all PDB files listed in 1.10.287.110.SI60.pdblist must be downloaded in current folder or in PDBPATH)
+2) Not aligned sequences in FASTA format, PDB file name specified in seq. name
+PC_ali -seq 50044_Mammoth.aln -pdbdir <PDBPATH>
+3) Aligned sequences in FASTA format, PDB file name specified in seq. name
+PC_ali -seq 50044_Mammoth.aln -pdbdir <PDBPATH>
+(all PDB files named in 50044_Mammoth.aln must be in current folder or in PDBPATH)
+
 
 OUTPUT:
-MSA (PCAli.fas),
-NJ tree (PCAli.tree), 
-structure similarity (.sim) and structure divergence scores (.div) for each protein pair,
+MSA (.PCAli.fas),
+NJ tree (.PCAli.tree), 
+structure similarity (.prot.sim) and structure divergence scores (.prot.div) for each protein pair,
 correlations between different types of sequence and structure identity (.id),
 MSA of secondary structure (_ss.msa)
 

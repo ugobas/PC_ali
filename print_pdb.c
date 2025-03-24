@@ -77,7 +77,7 @@ float Compute_RMSD(struct protein **prot_p, int ci, int cj,
 
   float TM_coeff=1.24, TM_offset=1.8, L_offset=15;
   float d02=TM_coeff*pow(lmin-L_offset, 1./3)-TM_offset; //lmin
-  if(d02<=0)return(0);
+  //if(d02<=0)return(0);
   d02*=d02;
   int n=0; float rmsd=0;
   for(int k=0; k<L_msa; k++){
@@ -86,7 +86,8 @@ float Compute_RMSD(struct protein **prot_p, int ci, int cj,
     float *x1=xca_i+3*ki, *x2=xca_j+3*kj;
     float dx=x1[0]-x2[0], dy=x1[1]-x2[1], dz=x1[2]-x2[2];
     float dd=dx*dx+dy*dy+dz*dz;
-    if(dd>d02)continue; // Compute only for well superimposed
+    //if(dd>d02)continue; // Compute only for well superimposed
+    if(dd>d02){dd=d02;}; // Min between dd and d02
     rmsd+=dd;
     n++;
   }
