@@ -7,7 +7,7 @@
 #include <math.h>
 #include <ctype.h>
 
-#define SEC_STR_MAX 500      // Max number of sec. str.elements
+#define SEC_STR_MAX 5000      // Max number of sec. str.elements
 #define MAXRES 10000
 #define MAXATOM 100
 #define CHARPDB 20
@@ -315,12 +315,16 @@ short *Read_seqres(struct protein *prot, int nres,
     }else if(strncmp(string, "REMARK 465", 10)==0){
       /* REMARK 465   M RES C SSSEQI
 	 REMARK 465     MET A   -19 */
+      if(strncmp(string+11, "IDENTI", 6)==0){continue;}
+      if(strncmp(string+11, "EXPERI", 6)==0){continue;}
+      if(strncmp(string+11, "THE FO", 6)==0){continue;}
       if(string[19]==chain_to_read && string[13]!='M'){
 	if(ndis>=dismax){
 	  printf("WARNING, too many disordered residues (>%d) Just read:\n",
 		 dismax, string); continue;
 	}
 	sscanf(string+23, "%d", res_dis+ndis);
+	printf("Dis. res. %s", string);
 	aa_dis[ndis]=Code_3_1(string+15);
 	ndis++;
       }
@@ -329,94 +333,78 @@ short *Read_seqres(struct protein *prot, int nres,
     }
   }
   fclose(file_in);
+  printf("%d SEQRES residues %d structured, %d disordered found in %s\n",
+	 n_seqres, nres, ndis, filename);
 
   // The SEQRES record was not found, copy from ATOM
+  int is_seqres=1, error=0;
   if(n_seqres==0){
+    is_seqres=0;
     printf("WARNING, the SEQRES record is not present in %s\n", filename);
     printf("I will copy it from the ATOM record (%d res) omitting "
 	   "%d disordered residues\n", nres, ndis);
     n_seqres=nres+ndis;
-    char *seqr=malloc(n_seqres*sizeof(char));
-    int delta=0, ini=1, first_str=0, i;
-    for(i=0; i<n_seqres; i++){seqr[i]='X';}
-    for(i=0; i<nres; i++){
-      int r=Get_number(prot->pdbres[i]);
-      if(ini){
-	for(int j=0; j<ndis; j++){
-	  if(r>res_dis[j])break;
-	  first_str++;
-	}
-	delta=first_str+1-r; ini=0;
-      }
-      seqres[i]=r+delta;
-      if(seqres[i]>n_seqres){
-	printf("WARNING, too many residues: "
-	       "n_seqres=%d nres=%d ndis=%d delta=%d seqres=%d\n",
-	       n_seqres, nres, ndis, delta, seqres[i]);
-	exit(8);
-	seqres[i]=n_seqres;
-      }
-      seqres[seqres[i]-1]=prot->aseq[i];
-    }
-    prot->seqr=seqr;
-    return(seqres);
-  }
-
-  // The SEQRES record was found
-  int error=0;
-  printf("%d SEQRES residues %d structured, %d disordered found in %s\n",
-	 n_seqres, nres, ndis, filename);
-  if(n!=n_seqres){
+    n=n_seqres;
+  }else if(n!=n_seqres){
     printf("ERROR reading SEQRES of chain %c, nres=%d expected %d\n",
 	   chain_to_read, n, n_seqres); error=1;
   }
+
   // Get aa of SEQRES in 1 letter code
-  char *seqr=malloc(n_seqres*sizeof(char)),*s1=seqr, *s3=seq3, n_mod=0;
-  for(int k=0; k<n_seqres; k++){
-    *s1=Code_3_1(s3);
-    if(*s1=='X'){
-      *s1=Het_res(s3, res_exo, res_std, n_exo); n_mod++;
-    }
-    printf("%c", *s1);
-    s1++; s3+=3;
-  }
-  if(n_mod)printf(" %d modified residues", n_mod);
-  printf("\n");
-  if(error)exit(8);
-
-  int first_str=0, delta=0, found=0, i;
-  for(i=0; i<n_seqres; i++){
-    if(seqr[i]==prot->aseq[0] &&
-       seqr[i+1]==prot->aseq[1] && 
-       seqr[i+2]==prot->aseq[2]){
-      int r=Get_number(prot->pdbres[0]);
-      first_str=i; found=1;
-      delta=first_str-r;
-      break;
-    } 
-  }
-  if(found==0){
-    printf("WARNING, first structured residue not found "
-	   "first structured triplet: %c%c%c\n",
-	   prot->aseq[0],prot->aseq[1],prot->aseq[2]);
-  }else{
-    printf("First structured residues: %c%d %c%d %c%d\n",
-	   prot->aseq[0],delta,prot->aseq[1],delta+1,prot->aseq[2],delta+2);
-  }
-
-  for(i=0; i<nres; i++){
-    int r=Get_number(prot->pdbres[i]);
-    seqres[i]=r+delta;
-    if(seqres[i]>n_seqres){
-	printf("WARNING, too many residues: "
-	       "n_seqres=%d nres=%d delta=%d seqres=%d i=%d\n",
-	       n_seqres, nres, delta, seqres[i], i);
-	exit(8);
-	seqres[i]=n_seqres;
-      }
-  }
-
+  char *seqr=malloc(n_seqres*sizeof(char)); int i;
   prot->seqr=seqr;
+  for(i=0; i<n_seqres; i++){seqr[i]='X';}
+  if(seq3){
+    char *s1=seqr, *s3=seq3; int n_mod=0;
+    for(i=0; i<n_seqres; i++){
+      *s1=Code_3_1(s3);
+      if(*s1=='X'){
+	*s1=Het_res(s3, res_exo, res_std, n_exo); n_mod++;
+      }
+      printf("%c", *s1);
+      s1++; s3+=3;
+    }
+    if(n_mod)printf(" %d modified residues", n_mod);
+    printf("\n");
+    int k=0, error=0;
+    for(i=0; i<nres; i++){
+      while(seqr[k]!=prot->aseq[i] && k<n_seqres){k++;}
+      if(k>=n_seqres){
+	printf("WARNING, i=%d a.a. %c not found\n", i, prot->aseq[i]);
+	error++;
+      }else{
+	seqres[i]=k;
+      }
+    }
+    if(error>10){
+      printf("seqres: ");
+      for(i=0; i<n_seqres; i++){printf("%c", seqr[i]);}
+      printf("\natomres: ");
+      for(i=0; i<nres; i++){printf("%c", prot->aseq[i]);}
+      printf("\n");
+      printf("ERROR, >= %d a.a. not found in seqres, exiting\n",error);
+      exit(8);
+    }
+  }else{ // seqres was not found
+    int k=0, j=-1, error=0; 
+    for(i=0; i<nres; i++){
+      int r=Get_number(prot->pdbres[i]);
+      for(j=0; j<ndis; j++){
+	if(res_dis[j]>=r){break;}
+	seqr[k]=aa_dis[j]; k++;
+      }
+      if(k<n_seqres){
+	seqr[k]=prot->aseq[i];
+	seqres[i]=k; k++;
+      }else{
+	error++;
+      }
+    }
+    if(error>10){
+      printf("ERROR, too many seqres residues %d = %d+%d excess= %d\n",
+	     n_seqres, nres, ndis, error); exit(8);
+    }
+  }
   return(seqres);
 }
 
@@ -484,8 +472,15 @@ char Code_3_1(char *res){
   }else if(strncmp(res,"ASX",3)==0){return('N');
   }else if(strncmp(res,"GLX",3)==0){return('Q');
   }else{
-    printf("WARNING, a.a. %c%c%c not known\n", *res,*(res+1),*(res+2));
-    return('X');
+    char MODRES=Get_aaname(res);
+    if(MODRES=='X'){
+      MODRES=Het_res(res, res_exo, res_std, n_exo);
+    }
+    if(MODRES=='X'){
+      printf("WARNING, a.a. %c%c%c not known\n", *res,*(res+1),*(res+2));
+      //exit(8);
+    }
+    return(MODRES);
   }
 }
 
@@ -520,17 +515,21 @@ int Select_domain(struct protein *prot,
 
   for(i=0; i<L; i++){
     int r=prot->seqres[i]; //i+1;
-    if(0){
-      r=Get_number(prot->pdbres[i]);
-    }
+    if(0){r=Get_number(prot->pdbres[i]);}
     for(int k=0; k<nfrag; k++){
       if(r>=ini_frag[k] && r<=end_frag[k]){select[i]=1; sel++; break;}
     }
   }
   //printf("Selecting %d residues out of %d in %d fragments\n", sel,L,nfrag);
-  if(sel<Lsel){
+    int tol=Lsel/3;
+    if(sel<Lsel){
     printf("WARNING, %d residues found in domain, expected %d\n", sel, Lsel);
-    int tol=Lsel/3; if(sel<Lsel-tol){printf("EXITING\n"); exit(8);}
+
+    if(sel<Lsel-tol && sel<L-tol){
+      printf("seqres: ");
+      for(i=0; i<L; i++){printf("%d ", prot->seqres[i]);}
+      printf("\nEXITING\n"); exit(8);
+    }
   }
 
   sel=0;
@@ -605,6 +604,7 @@ char Get_aaname(char *aaname){
       if(strncmp(aaname, modres[i]+3*j, 3)==0)return(AANAME1[i]);
     }
   }
+
   return('X');
 }
 
@@ -713,7 +713,7 @@ int Secondary_structure(short *ss3, int N_res, char chain, char **pdbres,
 
 void Modres(){
   int i;
-  for(i=0; i<20; i++)modres[i]=malloc(100*sizeof(char));
+  for(i=0; i<20; i++)modres[i]=malloc(200*sizeof(char));
   strcpy(modres[0], "CSDMDOORNDBZNALLALHACAYANCB"); // Ala
   strcpy(modres[1], // Cys 
 	 "CYGCY3CSUCSPCYMCASCSBCSRCMECMHCSSCSXCSWCSOALSSMCCEAOCSCCSSCYYCM");
@@ -723,7 +723,7 @@ void Modres(){
   strcpy(modres[5], "GL3CHGGLZACYFGL"); //  Gly 
   strcpy(modres[6], "MHSNEPHIC"); //  His
   strcpy(modres[7], "IIL"); // Ile
-  strcpy(modres[8], "LLPKCXLYZALYLCXMCL"); // Lys 
+  strcpy(modres[8], "LLPKCXLYZALYLCXMCLMLYMLZM3L"); // Lys 
   strcpy(modres[9], "LEFDLE"); //  Leu 
   strcpy(modres[10], "MSEFMEMMEMSOFORNRQCH6"); // Met
   strcpy(modres[11], "IASMEN"); // Asn
@@ -744,7 +744,7 @@ void Modres(){
 int Code_AA_2(char aseq, char *aacode, int n){
   for(int i=0; i<n; i++)if(aseq==aacode[i])return(i);
   if(aseq=='X')return(0);
-  printf("WARNING, aa %c not known\n", aseq);
+  printf("WARNING, a.a. %c not known\n", aseq);
   return(20);
 }
 

@@ -1910,7 +1910,8 @@ int Get_pdb_list(struct Prot_input **Prot_input, char *input)
 
 int Read_domain(int **ini_frag, int **end_frag, char *domain)
 {
-  char *frag=domain; int n_frag=1, m_frag=0, isfrag=0;
+  char dom_store[200]; strcpy(dom_store, domain);
+  char *frag=dom_store; int n_frag=1, m_frag=0, isfrag=0;
   while(*frag!='\0'){
     if(*frag=='-'){m_frag++; isfrag=1;}
     else if(*frag==','){n_frag++;}
@@ -1925,7 +1926,7 @@ int Read_domain(int **ini_frag, int **end_frag, char *domain)
   }
   *ini_frag=malloc(n_frag*sizeof(int));
   *end_frag=malloc(n_frag*sizeof(int));
-  frag=domain; char *frag1=frag; n_frag=0;
+  frag=dom_store; char *frag1=frag; n_frag=0;
   while(*frag !='\0'){
     if(*frag=='-'){
       *frag=' '; sscanf(frag1, "%d", (*ini_frag)+n_frag); *frag='-';
