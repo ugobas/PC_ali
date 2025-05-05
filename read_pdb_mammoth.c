@@ -20,8 +20,8 @@
 //char SS_code[]=" HE-";
 
 // Modified residues
-#define NEXO 400
-  int n_exo=0;
+#define NEXO 500
+int n_exo=0;
 char *res_exo[NEXO], *res_std[NEXO];
 
 int Read_modres(char **res_exo, char **res_std, char *string, int *n_exo);
@@ -70,7 +70,7 @@ int Read_pdb(char *filename, struct protein **prot, char *chain_to_read)
 
   char string[300];
   int nres=0, n_atom=0;
-  int alternative=0, alt_check=0, het=0, exo=1, n_exo=0;
+  int alternative=0, alt_check=0, het=0, exo=1; //, n_exo=0;
   char alt_1=' ', alt, icode_old=' ',  icode, chain, exp_meth=' ';
   char res_label[6], res_old[6]="xxxx\0";
   float x, y, z;
@@ -125,12 +125,12 @@ int Read_pdb(char *filename, struct protein **prot, char *chain_to_read)
       //   if(HETATM), check if amino acid (N-CA-...)
       if(n_exo==0){
 	if(strncmp(string+13, "N ", 2)!=0){exo=0; continue;}
-	else{n_exo=1; exo=1;}
+	else{exo=1;}  //n_exo=1;
       }else if(exo==0){
 	continue;
       }else if(n_exo==1){
 	if(strncmp(string+13, "CA", 2)!=0){exo=0; n_atom=0; continue;}
-	else{n_exo=2;}
+	else{exo=2;} //n_exo=2;
       }
     }
 
@@ -202,7 +202,7 @@ int Read_pdb(char *filename, struct protein **prot, char *chain_to_read)
   }
   fclose(file_in);
 
-  if((n_atom>0)&&((het==0)||(n_exo>=2))){res_i->n_atom=n_atom; nres++;}
+  if((n_atom>0)&&((het==0)||(exo>=2))){res_i->n_atom=n_atom; nres++;}
 
   if(nres<=0){
     printf("ERROR, no amino acid found in pdb file %s chain %c\n",
@@ -324,7 +324,7 @@ short *Read_seqres(struct protein *prot, int nres,
 		 dismax, string); continue;
 	}
 	sscanf(string+23, "%d", res_dis+ndis);
-	printf("Dis. res. %s", string);
+	//printf("Dis. res. %s", string);
 	aa_dis[ndis]=Code_3_1(string+15);
 	ndis++;
       }
@@ -424,12 +424,15 @@ int Read_modres(char **res_exo, char **res_std, char *string, int *n_exo)
   for(int j=0; j<*n_exo; j++){
     if(strncmp(res_exo[j], string+12, 3)==0)return(0);
   }
+  if(*n_exo>=NEXO){
+    printf("WARNING, too many modified residues: > %d\n", NEXO);
+    return(0);
+  }
   res_exo[*n_exo]=malloc(3*sizeof(char));
   res_std[*n_exo]=malloc(3*sizeof(char));
   res_exo[*n_exo][0]=string[12]; res_std[*n_exo][0]=string[24];
   res_exo[*n_exo][1]=string[13]; res_std[*n_exo][1]=string[25];
   res_exo[*n_exo][2]=string[14]; res_std[*n_exo][2]=string[26];
-
   (*n_exo)++; return(0);
 } 
 

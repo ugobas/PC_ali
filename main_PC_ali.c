@@ -80,6 +80,9 @@ int PRINT_GAP=0; // Examine relationship between Triangle Inequality and gaps?
 int PRINT_SIM_ALL=0; // Print similarity for all conformations?
 int ALL_PAIRS=0; // write all pairwise alis or only j<i?
 
+int PRINT_FASTA=0; // Print PDB sequencs of selected domains
+int EXIT_FASTA=0;  // Exit after printing FASTA file
+
 float S0=0.05;    // for Tajima-Nei divergence
 float TM0=0.167; //  TM score of unrelated proteins
 
@@ -207,6 +210,7 @@ void Get_input(char *file_ali, char *file_list, char *file_fun,
 int Get_sequences(struct Prot_input **Prot_input, int *Nali, char *file_ali,
 		  int INP_MSA); //char *PDBDIR, char *PDBEXT, 
 int Get_pdb_list(struct Prot_input **Prot_input, char *input);
+char *Name_nodir(char *file);
 int Read_domain(int **ini_frag, int **end_frag, char *domain);
 int *Match_alignments(struct Prot_input *Prot1,
 		      struct Prot_input *Prot2, int N);
@@ -432,7 +436,32 @@ int main(int argc, char **argv)
     Set_scores(prot);
     i_seq[N_pdb]=i; N_pdb++; prot++;
   }
-  printf("\n%d proteins read out of %d listed in %s\n",N_pdb, N_prot, file_ali);
+  printf("\n%d proteins read out of %d listed in %s\n",N_pdb,N_prot,file_list);
+
+  if(file_list[0]!='\0' && PRINT_FASTA){
+    // Write read sequences from PDB to FASTA file
+    char name_fasta[200];
+    char *list_nodir=Name_nodir(file_list);
+    sprintf(name_fasta, "%s.input.fasta", list_nodir);
+    FILE *fasta_out = fopen(name_fasta, "w");
+    printf("Writting input sequences to FASTA %s\n", name_fasta);
+
+    for (int i = 0; i < N_pdb; i++) {
+      struct protein *prot = prots + i;
+      fprintf(fasta_out, ">%s\n", prot->domname);
+      for (int j = 0; j < prot->len; j++) {
+	fprintf(fasta_out, "%c", prot->aseq[j]);
+      }
+      fprintf(fasta_out, "\n");
+    }
+    fclose(fasta_out);
+    if(EXIT_FASTA){
+      printf("Sequences written, exiting\n");
+      exit(8);
+    }
+  }
+
+
   if(N_pdb<2){
     printf("ERROR, fewer than 2 proteins found\n"); exit(8);
   }
@@ -1757,6 +1786,8 @@ void help(char *pname){
 	 "\t -shift_max <Maximum shift for targeting sec.str.>\n"
 	 "\t -id     ! Print statistics of identical residues\n"
 	 "\t -print_cv     ! Print clock violations\n"
+	 "\t -print_fasta  ! Print sequences of selected domains\n"
+	 "\t -exit_fasta  ! Exit program after printing sequences\n"
 	 "\t -func <file with function similarity for pairs of proteins>\n"
 	 "\n", sim_thr);
   exit(8);
@@ -1856,6 +1887,13 @@ int Get_pdb_list(struct Prot_input **Prot_input, char *input)
       Pn->chain=chain[0];
     }
 
+    // Read domain
+    if(arg>=4){strcpy(Pn->domname, domname);}
+    else{sprintf(Pn->domname, "%s%c",Pn->code, Pn->chain);}
+    printf("%s", Pn->domname);
+
+    printf(" pdb=%s chain=%c", Pn->code, Pn->chain);
+
     // What is third column?
     if(arg>=3 && isdom==-2){
       // if contains - it is domain, if 1 or 2 it is dir
@@ -1871,13 +1909,13 @@ int Get_pdb_list(struct Prot_input **Prot_input, char *input)
       if(isdom==1){
 	strcpy(Pn->domain, word3);
 	Pn->nfrag=Read_domain(&(Pn->ini_frag), &(Pn->end_frag), Pn->domain);
-	printf(" %d domains: %s", Pn->nfrag, Pn->domain);
+	printf(" %d domains: %s\n", Pn->nfrag, Pn->domain);
       }else if(isdom==0){
 	sscanf(word3, "%d", &dir);
 	printf(" folder=%d\n", dir);
       }else{
 	printf("\nERROR, col 3 must be domain (ex. 1-78) or folder (1 or 2)\n"
-	       "isdom=%d\nJust read in %s:ºn %s", isdom, input, string);
+	       "isdom=%d\nJust read in %s:\n %s", isdom, input, string);
 	exit(8);
       }
     }
@@ -1893,18 +1931,12 @@ int Get_pdb_list(struct Prot_input **Prot_input, char *input)
     }
     Pn->dir=dir-1;
 
-    // Read domain
-    if(arg>=4){strcpy(Pn->domname, domname);}
-    else{sprintf(Pn->domname, "%s%c",Pn->code, Pn->chain);}
-    printf(" %s", Pn->domname);
-
-    printf("file=%s chain=%c", Pn->code, Pn->chain);
-
     (*Prot_input)[n].seq=NULL;
     (*Prot_input)[n].len=0;
     n++;
   }
   fclose(file_in);
+
   return(n);
 }
 
@@ -2357,7 +2389,15 @@ int *Match_alignments(struct Prot_input *Prot1,
 
   return(ali_str);
 }
+
 */
+
+char *Name_nodir(char *file){
+  char *ini=file, *c=file;
+  while(*c !='\0'){if(*c=='/'){ini=c+1;} c++;}
+  if(*ini=='\0'){ini=file;}
+  return(ini);
+}
 
 void Get_input(char *file_ali, char *file_list, char *file_fun,
 	       char *name_in,  char *PDB_DIR, char *PDB_EXT, char *OUTG,
@@ -2499,6 +2539,11 @@ void Get_input(char *file_ali, char *file_list, char *file_fun,
       }
     }else if(strcmp(argv[i], "-print_pdb")==0){
       PRINT_PDB=1;
+    }else if(strcmp(argv[i], "-print_fasta")==0){
+      PRINT_FASTA=1;
+    }else if(strcmp(argv[i], "-exit_fasta")==0){
+      EXIT_FASTA=1;
+
     }else if(strcmp(argv[i], "-id")==0){
       PRINT_ID=1;
       printf("Printing propensities between conservation measures\n");
