@@ -531,7 +531,7 @@ int Select_domain(struct protein *prot,
     if(sel<Lsel-tol && sel<L-tol){
       printf("seqres: ");
       for(i=0; i<L; i++){printf("%d ", prot->seqres[i]);}
-      printf("\nEXITING\n"); exit(8);
+      printf("\nLEAVING\n"); //exit(8);
     }
   }
 

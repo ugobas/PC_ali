@@ -403,7 +403,8 @@ int main(int argc, char **argv)
     strcpy(prot->domain,  Pn->domain);
     if(Pn->domain[0]!='\0'){
       Pn->nfrag=Read_domain(&(Pn->ini_frag), &(Pn->end_frag), Pn->domain);
-      Select_domain(prot, Pn->ini_frag, Pn->end_frag, Pn->nfrag);
+      r=Select_domain(prot, Pn->ini_frag, Pn->end_frag, Pn->nfrag);
+      if(r<=0)continue;
     }
     printf("L= %d\n", prot->len);
 
