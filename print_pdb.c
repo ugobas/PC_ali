@@ -13,7 +13,7 @@ void Name3(char *aaname3, char aa1);
 extern int Copy_CA(struct atom *atom1, float *xca, int n_atom);
 void Print_pdb(char *name_in, struct protein **prot_p, int n)
 {
-  char nameout[100]; sprintf(nameout, "%s.pdb", name_in);
+  char nameout[100]; sprintf(nameout, "%s.PCAli.pdb", name_in);
   FILE *file_out=fopen(nameout, "w");
   printf("Printing %d superimposed structures in %s\n", n, nameout);
   fprintf(file_out, "REMARK %d structures superimposed after multiple "

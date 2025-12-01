@@ -1,7 +1,7 @@
 int NJ_align(int **msa, int *N_ali_max,
 	     int ***Ali_pair, float ****Rot_pair, float ***Shift_pair,
 	     struct protein **prot_p, char *name_out, 
-	     float **div_in, int n, int AVE_LINK);
+	     float **div_in, float **div_seq_in, int n, int AVE_LINK);
 int Align_PC_NW_mult(int **msa, int *len_msa, int *N_ali_max, int N_seq,
 		     struct protein **prot_p,
 		     int ***Ali_pair,float ****Rot_pair,float ***Shift_pair,

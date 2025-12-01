@@ -269,7 +269,7 @@ void Max_shared(int *neighb1, float *score1, int n1,
 
 void Invert_ali(int *ali2, int n2, int *ali, int n1){
   for(int i=0; i<n2; i++)ali2[i]=-1;
-  for(int i=0; i<n1; i++)if(ali[i]>=0)ali2[ali[i]]=i;
+  for(int i=0; i<n1; i++)if(ali[i]>=0 && ali[i]<n2)ali2[ali[i]]=i;
 }
 
 float Contact_overlap(int *ali,
@@ -510,6 +510,28 @@ int Change_ext(char *name_out, char *name_in, char *ext){
   return(0);
 }
 
+int Pair_ali_conf(int *ali, int L_ali, int *ali_1, int *ali_2,
+		  int *msa_1, int L1, int len1, int *msa_2, int L2, int len2)
+{
+  // Store Alignment of sequences k_1 and k_2
+  int nali=0, i;
+  for(i=0; i<L_ali; i++)ali[i]=-1;
+  for(i=0; i<L_ali; i++){
+    int i1=ali_1[i], i2=ali_2[i], k1, k2;
+    if(i1>=0){k1=msa_1[i1];}else{k1=-1;}
+    if(i2>=0){k2=msa_2[i2];}else{k2=-1;}
+    if(i1>=L1 || i2>=L2 || k1>=len1 || k2>=len2){
+      printf("ERROR in Pair_ali_conf, I cannot align site %d of %d (%d, %d) "
+	     "with site %d of %d (%d, %d) \n",
+	     i1, L1, k1, len1, i2, L2, k2, len2);
+      continue; //exit(8);
+    }
+    if(k1>=0){ali[k1]=k2; if(k2>=0)nali++;}
+  }
+  return(nali);
+}
+
+
 int Pair_ali(int *ali, int N_ali, int *ali1, int *ali2)
 {
   // Store Alignment of sequences 1 and 2
@@ -531,7 +553,8 @@ float Seqid(int *diff, int *ali_12, int *id_aa,
     int i2=ali_12[i1];
     if(i2>=0){
       if(i2>=N2){
-	printf("ERROR in Seqid, i2=%d but l2= %d\n", i2, N2); return(-1);
+	printf("ERROR in Seqid, i2=%d but l2= %d\n", i2, N2); 
+	break;
       }
       nali++;
       if(seq1[i1]==seq2[i2]){id++; if(id_aa)id_aa[i1]=1;}
