@@ -39,13 +39,13 @@ char FILE_CM[NCHAR], FILE_SEQ[NCHAR];
              READING STRUCTURES
 ************************************************************/
 int Read_PDB_compress(struct protein **prot,
-		      char *pdbid, char *chain,
+		      char *pdbid, char *chain, int chain_num,
 		      char *PDB_PATH, char *PDB_EXT)
 {
   int L; char filename[200], name[100];
   strcpy(name, pdbid);
   FILE *file_in=NULL;
-  for(int i=0; i<4; i++){
+  for(int i=0; i<3; i++){
     if(i==0){
       sprintf(filename,"%s%s%s", PDB_PATH, name, PDB_EXT);
     }else if(i==1){
@@ -53,16 +53,15 @@ int Read_PDB_compress(struct protein **prot,
     }else if(i==2){
       if(name[4]=='_'){ // Try without chain
 	name[4]='\0';
+	sprintf(filename,"%s%s%s", PDB_PATH, name, PDB_EXT);
       }else{
-	sprintf(name, "%s%s", name, chain);
+	continue;
       }
-      sprintf(filename,"%s%s%s", PDB_PATH, name, PDB_EXT);
-    }else if(i==3){
-      sprintf(filename,"%s%s", PDB_PATH, name); // Try without extension
     }
     file_in=fopen(filename, "r");
     if(file_in){break;}
-    printf("WARNING, %s not found\n", filename);
+    printf("WARNING, %s chain %c (%d) not found\n",
+	   filename, chain, chain_num);
 
   }
   if(file_in==NULL){
@@ -77,12 +76,12 @@ int Read_PDB_compress(struct protein **prot,
   if(Get_compression(filename)==0){
     //printf("Reading pdb: %s chain %c in uncompressed format into %x\n",
     //	   filename, *chain, *prot);
-    L=Read_pdb(filename, prot, chain);
+    L=Read_pdb(filename, prot, chain, chain_num);
   }else{
     char command[400], FILE_TMP[10]="pdb.tmp";
     sprintf(command,"gunzip -c %s > %s\n", filename, FILE_TMP);
     system(command);
-    L=Read_pdb(FILE_TMP, prot, chain);
+    L=Read_pdb(FILE_TMP, prot, chain, chain_num);
     sprintf(command,"rm -f %s\n", FILE_TMP);
     system(command);
   }
@@ -172,25 +171,34 @@ int Remove_char(char *string, char c){
 int Read_PDB_list(struct protein *prots, int N_pdb, char *PDB_PATH,
 		  int CM_FILE, char CONT_TYPE, float CONT_THR, int IJ_MIN)
 {
-  int i;
+  int i, nores=0, nocont=0;
+  struct protein *prot=prots;
   for(i=0; i<N_pdb; i++){
-    struct protein *prot=prots+i;
+    prot->chain_num=-1;
+    int nres=0;
     char filename[200];
     sprintf(filename,"%s%s", PDB_PATH, prot->name_file);
     if(Get_compression(filename)==0){
-      Read_pdb(filename, &prot, &(prot->chain));
+      nres=Read_pdb(filename, &prot, &(prot->chain), prot->chain_num);
     }else{
       char command[400], FILE_TMP[100]="pdb.tmp";
       sprintf(command,"gunzip -c %s > %s\n", filename, FILE_TMP);
       system(command);
-      Read_pdb(FILE_TMP, &prot, &(prot->chain));
+      nres=Read_pdb(FILE_TMP, &prot, &(prot->chain), prot->chain_num);
       sprintf(command,"rm -f %s\n", FILE_TMP); system(command);
     }
-    if(CM_FILE==0)
-      Compute_contact_list(prot, CONT_TYPE, CONT_THR, IJ_MIN);
+    if(nres<=0){nores++; continue;}
+    if(CM_FILE==0){
+      int NC=Compute_contact_list(prot, CONT_TYPE, CONT_THR, IJ_MIN);
+      if(NC==0){nocont++; continue;}
+    }
     if(i&&(((int)(0.01*i)*100)==i))printf("%4d PDB files read\n", i);
+    prot++;
   }
   printf("%4d PDB files read\n", i);
+  if(nocont || nores){
+    printf("%d chains not found, %d with too many contacts\n", nores, nocont);
+  }
   return(0);
 }
 
@@ -356,7 +364,8 @@ int Read_processed_proteins(struct protein *prot, int N_prot,
 
   /* Read contact matrices */
   printf("Maximum num. of contacts per residue: %d\n", nc_max);
-  nc_max++; //if(nc_max>20)exit(8);
+  nc_max++;
+  //if(nc_max>20)exit(8);
   printf("Reading contact matrices in %s\n", file_cm);
   file_in=fopen(file_cm, "r"); Np=0;
   fgets(string, sizeof(string), file_in);

@@ -20,7 +20,7 @@
 //char SS_code[]=" HE-";
 
 // Modified residues
-#define NEXO 500
+#define NEXO 5000
 int n_exo=0;
 char *res_exo[NEXO], *res_std[NEXO];
 
@@ -57,7 +57,8 @@ int  n_modres[20];
 
 /***********************************************************/
 
-int Read_pdb(char *filename, struct protein **prot, char *chain_to_read)
+int Read_pdb(char *filename, struct protein **prot,
+	     char *chain_to_read, int chain_num)
 {
 
   FILE *file_in=fopen(filename, "r");
@@ -81,6 +82,7 @@ int Read_pdb(char *filename, struct protein **prot, char *chain_to_read)
   struct secondary sec_ele[SEC_STR_MAX];
   int N_sec_ele=0;
 
+  int num_chain=0; char chain_old='\0';
   while(fgets(string, sizeof(string), file_in)!=NULL){
 
     if(res_i->atom==NULL)res_i->atom=malloc(MAXATOM*sizeof(struct atom));
@@ -92,6 +94,7 @@ int Read_pdb(char *filename, struct protein **prot, char *chain_to_read)
       het=1;
     }else if(strncmp(string,"MODRES", 6)==0){
       Read_modres(res_exo, res_std, string, &n_exo);
+      continue;
     }else if((strncmp(string,"TER",3)==0)&&(nres>0)&&(*chain_to_read!='*')){
       break;
     }else if(strncmp(string, "ENDMDL", 6)==0){
@@ -103,17 +106,29 @@ int Read_pdb(char *filename, struct protein **prot, char *chain_to_read)
       else{exp_meth='X';}
       continue;
     }else if(strncmp(string,"HELIX ", 6)==0){
-      Read_sec_str(sec_ele, &N_sec_ele, 'H', string); continue;
+      Read_sec_str(sec_ele, &N_sec_ele, 'H', string);
+      continue;
     }else if(strncmp(string,"SHEET ", 6)==0){
-      Read_sec_str(sec_ele, &N_sec_ele, 'E', string); continue;
+      Read_sec_str(sec_ele, &N_sec_ele, 'E', string);
+      continue;
     }else{
       continue; 
     }
  
     // Check chain
     chain=string[21];
-    if((nres<=0)&&((*chain_to_read)=='\0'))*chain_to_read=chain; 
-    if((*chain_to_read)=='.'){chain='.';}
+    if(chain!=chain_old){
+      num_chain++; chain_old=chain;
+      printf("chain %d %c read: %c\n", num_chain, chain, *chain_to_read);
+    }
+    if(nres<=0){
+      if((chain_num<0)&&((*chain_to_read)=='\0')){
+	*chain_to_read=chain; // Read first chain
+      }else if(num_chain==chain_num){
+	*chain_to_read=chain; // Read chain number chain_num
+      }
+    }
+    //if((*chain_to_read)=='.'){chain='.';}
     if(((*chain_to_read)!='*')&&((*chain_to_read)!=chain)){
       if(nres>0){break;}else{continue;}
     }
@@ -171,7 +186,8 @@ int Read_pdb(char *filename, struct protein **prot, char *chain_to_read)
       }
       if(nres >= MAXRES){
 	printf("ERROR, too many residues (more than %d)\n", MAXRES);
-	exit(8);
+	break; nres=0;
+	//exit(8);
       }
       n_atom=0;
       if(res_i->atom==NULL)
@@ -196,23 +212,26 @@ int Read_pdb(char *filename, struct protein **prot, char *chain_to_read)
     
     if(n_atom >= MAXATOM){
       printf("ERROR, too many atoms in residue %d %c (>%d)\n",
-    	     nres, res_i->aa, n_atom); exit(8);
+    	     nres, res_i->aa, n_atom);
+      nres=0; break;
+      //exit(8);
     }
 
   }
   fclose(file_in);
 
-  if((n_atom>0)&&((het==0)||(exo>=2))){res_i->n_atom=n_atom; nres++;}
-
   if(nres<=0){
     printf("ERROR, no amino acid found in pdb file %s chain %c\n",
 	   filename, *chain_to_read); return(0);
   }
+
+  if((n_atom>0)&&((het==0)||(exo>=2))){res_i->n_atom=n_atom; nres++;}
   printf("%d amino acid found in pdb %s chain %c\n",
 	 nres, filename, *chain_to_read);
 
   // Write protein
-  Write_protein(*prot, res, nres, filename, *chain_to_read, exp_meth);
+  int w=Write_protein(*prot, res, nres, filename, *chain_to_read, exp_meth);
+  if(w<0){return(0);}
   Secondary_structure((*prot)->ss3, (*prot)->len, *chain_to_read, //nres
 		      (*prot)->pdbres, sec_ele, N_sec_ele);
   //printf("%d secondary structure elements found\n", N_sec_ele);
@@ -228,12 +247,13 @@ int Write_protein(struct protein *prot, struct residue *res, int nres,
 		  char *filename, char chain_to_read, char exp_meth)
 {
   struct atom *atom1, *atom2; 
-  int i, j, nca=0, natoms=0;
+  int i, j, ires=0, natoms=0;
   for(i=0; i<nres; i++)natoms+=res[i].n_atom;
   prot->natoms=natoms;
 
   //Set_prot_name(prot->code, filename, chain_to_read);
   prot->exp_meth=exp_meth;
+  prot->nuc=0; // It is protein
   //prot->ss=malloc(nres*sizeof(char));
   prot->ss3= malloc(nres*sizeof(short));
   prot->aseq=malloc(nres*sizeof(char));
@@ -252,37 +272,49 @@ int Write_protein(struct protein *prot, struct residue *res, int nres,
   float *xca_rot=prot->xca_rot;
   for(i=0; i<nres; i++){
     int n_atom=res[i].n_atom;
-
-    // Copy residue only if CA is found:
-    if(Copy_CA(res[i].atom, xca_rot, n_atom)==0){
-      printf("WARNING, %d atoms found at res %d%c of %d\n",
-	     n_atom, i, res[i].aa, nres); continue;
+    int c=(int)res[i].aa;
+    if(c>=48 && c<=57){
+      if(c<=52){prot->nuc=1;} // DNA
+      else{prot->nuc=-1;} // RNA
+    }else{                 // amino acid
+      // Copy residue only if CA is found:
+      if(Copy_CA(res[i].atom, xca_rot, n_atom)==0){
+	printf("WARNING, %d atoms found at res %d%c of %d\n",
+	       n_atom, i, res[i].aa, nres); continue;
+      }
     }
 
-    prot->aseq[nca]=res[i].aa;
-    prot->n_atom[nca]=res[i].n_atom;
-    prot->pdbres[nca]=malloc(6*sizeof(char));
-    strcpy(prot->pdbres[nca], res[i].label);
-    if(prot->seq1)prot->seq1[nca]=Code_AA_2(res[i].aa, AANAME1, 20);
-    if(prot->seq_bs)prot->seq_bs[nca]=Code_AA_2(res[i].aa, AA_Blosum, 22);
+    prot->aseq[ires]=res[i].aa;
+    prot->n_atom[ires]=res[i].n_atom;
+    prot->pdbres[ires]=malloc(6*sizeof(char));
+    strcpy(prot->pdbres[ires], res[i].label);
+    if(prot->seq1)prot->seq1[ires]=Code_AA_2(res[i].aa, AANAME1, 20);
+    if(prot->seq_bs)prot->seq_bs[ires]=Code_AA_2(res[i].aa, AA_Blosum, 22);
 
     // Write atoms
-    prot->res_atom[nca]=malloc(n_atom*sizeof(struct atom));
-    atom1=prot->res_atom[nca]; atom2=res[i].atom;
+    prot->res_atom[ires]=malloc(n_atom*sizeof(struct atom));
+    atom1=prot->res_atom[ires]; atom2=res[i].atom;
     for(j=0; j<n_atom; j++){
       *atom1=*atom2; atom1++; atom2++;
     }
-    nca++; xca_rot+=3;
+    ires++; xca_rot+=3;
   }
-  prot->nca=nca;
-  prot->len=nca;
-  if(nca==0){
-    printf("ERROR, no CA atoms found in pdb file %s\n", filename); exit(8);
+  if(ires==0){
+    printf("ERROR, no residues found in pdb file %s\n", filename);
+    return(-1);
   }
-  if(prot->vec)Set_CA_vectors(prot);
+
+  prot->nca=ires;
+  if(prot->nuc==0){
+    prot->len=ires;
+    if(prot->vec)Set_CA_vectors(prot);
+  }else{
+    prot->len=nres;
+  }
+
   //if(ASSIGN_SS)Assign_ss(prots+i_prot)
   prot->seqres=Read_seqres(prot, nres, filename, chain_to_read);
-
+  if(prot->seqres==NULL){return(-1);}
 
   return(0);
 }
@@ -383,7 +415,8 @@ short *Read_seqres(struct protein *prot, int nres,
       for(i=0; i<nres; i++){printf("%c", prot->aseq[i]);}
       printf("\n");
       printf("ERROR, >= %d a.a. not found in seqres, exiting\n",error);
-      exit(8);
+      //exit(8);
+      return(NULL);
     }
   }else{ // seqres was not found
     int k=0, j=-1, error=0; 
@@ -402,7 +435,8 @@ short *Read_seqres(struct protein *prot, int nres,
     }
     if(error>10){
       printf("ERROR, too many seqres residues %d = %d+%d excess= %d\n",
-	     n_seqres, nres, ndis, error); exit(8);
+	     n_seqres, nres, ndis, error);
+      return(NULL); //exit(8);
     }
   }
   return(seqres);
@@ -474,11 +508,20 @@ char Code_3_1(char *res){
   }else if(strncmp(res,"HIP",3)==0){return('H');
   }else if(strncmp(res,"ASX",3)==0){return('N');
   }else if(strncmp(res,"GLX",3)==0){return('Q');
+  }else if(strncmp(res," DA",3)==0){return('0'); // DNA
+  }else if(strncmp(res," DG",3)==0){return('1'); // DNA
+  }else if(strncmp(res," DT",3)==0){return('2'); // DNA
+  }else if(strncmp(res," DC",3)==0){return('3'); // DNA
+  }else if(strncmp(res," DU",3)==0){return('4'); // DNA
+  }else if(strncmp(res,"  A",3)==0){return('5'); // RNA
+  }else if(strncmp(res,"  G",3)==0){return('6'); // RNA
+  }else if(strncmp(res,"  T",3)==0){return('7'); // RNA
+  }else if(strncmp(res,"  C",3)==0){return('8'); // RNA
+  }else if(strncmp(res,"  U",3)==0){return('9'); // RNA
+
   }else{
-    char MODRES=Get_aaname(res);
-    if(MODRES=='X'){
-      MODRES=Het_res(res, res_exo, res_std, n_exo);
-    }
+    if(Ini_Modres==0){Modres(); Ini_Modres=1;}
+    char MODRES=Het_res(res, res_exo, res_std, n_exo);
     if(MODRES=='X'){
       printf("WARNING, a.a. %c%c%c not known\n", *res,*(res+1),*(res+2));
       //exit(8);
@@ -532,6 +575,7 @@ int Select_domain(struct protein *prot,
       printf("seqres: ");
       for(i=0; i<L; i++){printf("%d ", prot->seqres[i]);}
       printf("\nLEAVING\n"); //exit(8);
+      //return(-1);
     }
   }
 
@@ -590,7 +634,7 @@ int Copy_CA(struct atom *atom_first, float *xca, int n_atom)
   if(isnan(xca[0]) || isnan(xca[1]) || isnan(xca[2])){
     printf("ERROR in atom %s r= %.2g %.2g %.2g n_atom= %d\n",
 	   atom->name, atom->r[0], atom->r[1], atom->r[2], n_atom);
-    exit(8);
+    //exit(8);
   }
 
   return(1);
@@ -751,3 +795,23 @@ int Code_AA_2(char aseq, char *aacode, int n){
   return(20);
 }
 
+void Empty_prot(struct protein *prot)
+{
+  for(int i=0; i<prot->len; i++){
+    if(prot->res_atom[i]){free(prot->res_atom[i]);}
+    if(prot->pdbres[i]){free(prot->pdbres[i]);}
+  }
+  if(prot->pdbres){free(prot->pdbres);} prot->pdbres=NULL;
+  if(prot->ss3){free(prot->ss3);}       prot->ss3=NULL;
+  if(prot->aseq){free(prot->aseq);}     prot->aseq=NULL;
+  if(prot->seq1){free(prot->seq1);}     prot->seq1=NULL;
+  if(prot->seq_bs){free(prot->seq_bs);} prot->seq_bs=NULL;
+  if(prot->n_atom){free(prot->n_atom);} prot->n_atom=NULL;
+  if(prot->vec){free(prot->vec);}       prot->vec=NULL;
+  if(prot->xca_rot){free(prot->xca_rot);} prot->xca_rot=NULL;
+  prot->nuc=0;
+  prot->exp_meth=' ';
+  prot->natoms=0;
+  prot->nca=0;
+  prot->len=0;
+}

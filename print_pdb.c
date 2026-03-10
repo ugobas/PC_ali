@@ -66,13 +66,13 @@ void Name3(char *aaname3, char aa1){
   aaname3[3]='\0';
 }
 
-float Compute_RMSD(struct protein **prot_p, int ci, int cj,
-		   int **msa, int L_msa)
+float Compute_RMSD(struct protein *pi, struct protein *pj,
+		   int si, int sj, int **msa, int L_msa)
 {
-  float *xca_i=prot_p[ci]->xca_rot;
-  float *xca_j=prot_p[cj]->xca_rot;
-  int Li=prot_p[ci]->len;
-  int Lj=prot_p[cj]->len;
+  float *xca_i=pi->xca_rot;
+  float *xca_j=pj->xca_rot;
+  int Li=pi->len;
+  int Lj=pj->len;
   int lmin=Li; if(Lj<lmin)lmin=Lj;
 
   float TM_coeff=1.24, TM_offset=1.8, L_offset=15;
@@ -81,7 +81,7 @@ float Compute_RMSD(struct protein **prot_p, int ci, int cj,
   d02*=d02;
   int n=0; float rmsd=0;
   for(int k=0; k<L_msa; k++){
-    int ki=msa[ci][k], kj=msa[cj][k];
+    int ki=msa[si][k], kj=msa[sj][k];
     if(ki<0 || kj<0)continue;
     float *x1=xca_i+3*ki, *x2=xca_j+3*kj;
     float dx=x1[0]-x2[0], dy=x1[1]-x2[1], dz=x1[2]-x2[2];

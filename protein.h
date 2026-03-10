@@ -18,11 +18,13 @@ struct protein{
   int len;
   int nca;
   int natoms;
+  int nuc; // 0 if protein, 1 if DNA, -1 if RNA
   char name_file[20];
   char code[30];
   char domname[40];
   char domain[40];
   char chain;
+  int chain_num;
   //char *ss;
   char *aseq;
   short *seq_bs;  // blosum code

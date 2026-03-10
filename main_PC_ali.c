@@ -124,6 +124,7 @@ struct Prot_input{
   char domname[40];
   char domain[40];
   char chain;
+  int chain_num;
   char *seq;
   int len;
   int dir;
@@ -131,6 +132,7 @@ struct Prot_input{
   int *ini_frag;
   int *end_frag;
 };
+int CHAIN_NUM=0;
 
 // Alignments
 int ALL_TYPES=0; // Record for all ali types or only INP and PCAli-mult?
@@ -201,8 +203,8 @@ extern int Cluster_seqs(int **rep_str, // repr. str. (one per cluster)
 			struct protein *prots, int N_pdb, // input
 			float seq_thr, float str_thr);
 extern void Print_pdb(char *name_in, struct protein **prot_p, int n);
-extern float Compute_RMSD(struct protein **prot_p, int ci, int cj,
-			  int **msa, int L_msa);
+extern float Compute_RMSD(struct protein *pi, struct protein *pj,
+			  int si, int sj, int **msa, int L_msa);
 extern void All_distances(float **d2, float *x1, int n1, float *x2, int n2);
 
 void Score_alignment(float *nali, float *SI, float *TM, float *CO, float *PC,
@@ -396,28 +398,34 @@ int main(int argc, char **argv)
   
   // Proteins prots
   struct protein prots[N_prot], *prot=prots;
-  int N_pdb=0, i_seq[N_prot], L_seq[N_prot];
+  int N_pdb=0, i_seq[N_prot], i_inp[N_prot], L_seq[N_prot];
   int **Prot_ali=NULL; if(N_ali){Prot_ali=Allocate_mat2_i(N_prot, N_ali);}
-  
-  for(i=0; i<N_prot; i++){
-    struct Prot_input *Pn=Prot_in+i;
-    printf("\nReading PDB:%s %c %s %s\n",
-	   Pn->code, Pn->chain, Pn->domain, Pn->domname);
+  int n_no=0, n_nuc=0;
+
+  for(int ir=0; ir<N_prot; ir++){
+    struct Prot_input *Pn=Prot_in+ir;
+    printf("\nReading PDB %s chain=%c (%d) %s %s\n",
+	   Pn->code, Pn->chain, Pn->chain_num, Pn->domain, Pn->domname);
     Initialize_prot(prot);
     char *PDB_D=PDBDIR; if(Pn->dir){PDB_D=PDBDIR2;}
-    int r=Read_PDB_compress(&prot, Pn->code, &(Pn->chain), PDB_D, PDB_EXT);
+    int r=Read_PDB_compress(&prot, Pn->code, &(Pn->chain), Pn->chain_num,
+			    PDB_D, PDB_EXT);
     if(r==0){
-      r=Read_PDB_compress(&prot, Pn->domname, &(Pn->chain), PDB_D, PDB_EXT);
+      r=Read_PDB_compress(&prot, Pn->domname, &(Pn->chain), Pn->chain_num,
+			  PDB_D, PDB_EXT);
     }
     if(PDBDIR2[0]!='\0' && strcmp(PDB_D, PDBDIR2)){
       if(r==0){
-	r=Read_PDB_compress(&prot, Pn->code, &(Pn->chain), PDBDIR2, PDB_EXT);
+	r=Read_PDB_compress(&prot, Pn->code, &(Pn->chain), Pn->chain_num,
+			    PDBDIR2, PDB_EXT);
       }
       if(r==0){
-	r=Read_PDB_compress(&prot, Pn->code, &(Pn->chain), PDBDIR2, PDB_EXT);
+	r=Read_PDB_compress(&prot, Pn->code, &(Pn->chain), Pn->chain_num,
+			    PDBDIR2, PDB_EXT);
       }
     }
-    if(r<=0)continue;
+    if(r<=0){n_no++; continue;}
+    if(prot->nuc){n_nuc++; Empty_prot(prot); continue;}
     
     strcpy(prot->domname, Pn->domname);
     strcpy(prot->domain,  Pn->domain);
@@ -428,25 +436,25 @@ int main(int argc, char **argv)
     }
     printf("L= %d\n", prot->len);
     
-    if(Prot_in[i].seq){ // Amino acids from alignment
-      Prot_in[i].len=Count_AA(Prot_in[i].seq, N_ali);
-      if(Prot_in[i].len!=prot->len){
+    if(Prot_in[ir].seq){ // Amino acids from alignment or FASTA
+      Prot_in[ir].len=Count_AA(Prot_in[ir].seq, N_ali);
+      if(Prot_in[ir].len!=prot->len){
 	printf("WARNING, different n.residues in ali (%d) and PDB (%d)\n",
-	       Prot_in[i].len, prot->len);
+	       Prot_in[ir].len, prot->len);
 	for(j=0; j<N_ali; j++){
-	  if(Prot_in[i].seq[j]!='-')printf("%c",Prot_in[i].seq[j]);
+	  if(Prot_in[ir].seq[j]!='-')printf("%c",Prot_in[ir].seq[j]);
 	}
 	printf("\n");
 	for(j=0; j<prot->len; j++){printf("%c",prot->aseq[j]);}
 	printf("\n");
       }
-      if(Prot_ali && Align_seq(Prot_ali[N_pdb],N_ali,Prot_in[i].seq,
+      if(Prot_ali && Align_seq(Prot_ali[N_pdb],N_ali,Prot_in[ir].seq,
 			       prot->aseq,prot->len)<0)continue;
-      if(Prot_in[i].len<prot->len){prot->len=Prot_in[i].len;}
+      if(Prot_in[ir].len<prot->len){prot->len=Prot_in[ir].len;}
     }else{ // Amino acids from PDB
-      Prot_in[i].len=prot->len;
-      Prot_in[i].seq = malloc(prot->len*sizeof(char));
-      for(j=0; j<prot->len; j++)Prot_in[i].seq[j]=prot->aseq[j];
+      Prot_in[ir].len=prot->len;
+      Prot_in[ir].seq = malloc(prot->len*sizeof(char));
+      for(j=0; j<prot->len; j++)Prot_in[ir].seq[j]=prot->aseq[j];
     }
     
     L_seq[N_pdb]=prot->len;
@@ -455,33 +463,12 @@ int main(int argc, char **argv)
     int NC=Compute_contact_list(prot, CONT_TYPE, CONT_THR, IJ_MIN);
     printf("%d contacts\n", NC);
     Set_scores(prot);
-    i_seq[N_pdb]=i; N_pdb++; prot++;
+    i_seq[N_pdb]=N_pdb; i_inp[N_pdb]=ir; N_pdb++; prot++;
   }
   printf("\n%d proteins read out of %d listed in %s\n",N_pdb,N_prot,file_list);
-  
-  
-  if(file_list[0]!='\0' && PRINT_FASTA){
-    // Write read sequences from PDB to FASTA file
-    char name_fasta[200];
-    sprintf(name_fasta, "%s.input.fasta", name_in);
-    FILE *fasta_out = fopen(name_fasta, "w");
-    printf("Writting input sequences to FASTA %s\n", name_fasta);
-    
-    for (int i = 0; i < N_pdb; i++) {
-      struct protein *prot = prots + i;
-      fprintf(fasta_out, ">%s\n", prot->domname);
-      for (int j = 0; j < prot->len; j++) {
-	fprintf(fasta_out, "%c", prot->aseq[j]);
-      }
-      fprintf(fasta_out, "\n");
-    }
-    fclose(fasta_out);
-    if(EXIT_FASTA){
-      printf("Sequences written, exiting\n");
-      exit(8);
-    }
-  }
-  
+  printf("%d chains not found, %d are nucleic acids total: %d\n",
+	 n_no, n_nuc, n_no+n_nuc+N_pdb);
+
   if(N_pdb<2){
     printf("ERROR, fewer than 2 proteins found\n"); exit(8);
   }
@@ -491,7 +478,8 @@ int main(int argc, char **argv)
        Group conformations of the same sequence
   **************************************************************************/
   // Group identical sequences
-  // Structural divergence: minimum among all conformations 
+  // Structural divergence: minimum among all conformations, computed after
+  // performing the multiple alignment only for non-redundant conformations 
   printf("Grouping proteins with > %.3f seq.identity\n", seq_thr);
   float str_thr=0.97; //**conformation, 
   int *rep_str, *N_all, **rep_conf, **rep_index, *N_conf,
@@ -525,14 +513,17 @@ int main(int argc, char **argv)
     }
   }
   
-  if(N_seq<N_pdb && file_list[0]!='\0'){
+
+  
+  if(file_list[0]!='\0'){
+
     char name_new[200]; FILE *file_out;
     sprintf(name_new, "%s.nr.pdblist", name_in);
     file_out = fopen(name_new, "w");
     printf("Writing non-redundant seq in %s\n", name_new);
     for(i=0; i<N_pdb; i++){
       if(is_rep[i]<0){continue;}
-      struct Prot_input *Pn=Prot_in+i;
+      struct Prot_input *Pn=Prot_in+i_inp[i];
       fprintf(file_out, "%s %c %s %s 1\n",
 	      Pn->code, Pn->chain, Pn->domain, Pn->domname);
     }
@@ -545,20 +536,41 @@ int main(int argc, char **argv)
       fprintf(file_out, "#pdb chain domain domname folder sequence\n");
       for(i=0; i<N_pdb; i++){
 	if(is_conf[i]<0){continue;}
-	struct Prot_input *Pn=Prot_in+i;
+	struct Prot_input *Pn=Prot_in+i_inp[i];
 	fprintf(file_out, "%s %c %s %s %d %d\n",
 		Pn->code, Pn->chain, Pn->domain, Pn->domname, Pn->dir+1,
 		is_conf[i]);
       }
       fclose(file_out);
     }
+    if(PRINT_FASTA){
+
+      // Write read sequences from PDB to FASTA file
+      char name_fasta[200];
+      sprintf(name_fasta, "%s.input.fasta", name_in);
+      FILE *fasta_out = fopen(name_fasta, "w");
+      printf("Writing input sequences to FASTA %s\n", name_fasta);
+      for (int i = 0; i < N_pdb; i++) {
+	struct protein *prot = prots + i;
+	fprintf(fasta_out, ">%s\n", prot->domname);
+	for (int j = 0; j < prot->len; j++) {
+	  fprintf(fasta_out, "%c", prot->aseq[j]);
+	}
+	fprintf(fasta_out, "\n");
+      }
+      fclose(fasta_out);
+    }
+    if(EXIT_FASTA){
+      printf("-exit_fasta was requested, exiting\n");
+      exit(8);
+    }
   }
+
 
   double time1=clock();
   printf("Identical sequences grouped.Time= %.2lf sec.\n",
 	 (time1-time0)/nbtops);
  
-  
   // Average number of contacts per residue
   c_ave=0; double c_norm=0;
   for(i=0; i<N_pdb; i++){
@@ -1064,7 +1076,7 @@ int main(int argc, char **argv)
   
   // Sequences
   char **name_seq, **Seq=
-    Assign_Seq(&name_seq, len_seq, Prot_in,N_seq,rep_str,i_seq,N_ali);
+    Assign_Seq(&name_seq, len_seq, Prot_in,N_seq,rep_str,i_inp,N_ali);
   
   if(Prot_ali_ss){
     for(i=0; i<NS; i++){free(Prot_ali_ss[i]);} free(Prot_ali_ss);
@@ -1369,7 +1381,7 @@ int main(int argc, char **argv)
   // Functional similarity (if file_fun is present)
   float **fun_sim_Seq=NULL;
   int n_low=0, n_high=0;
-  float **fun_sim=Read_function(file_fun, Prot_in, i_seq, N_pdb);
+  float **fun_sim=Read_function(file_fun, Prot_in, i_inp, N_pdb);
   if(fun_sim){
     fun_sim_Seq=Allocate_mat2_f(N_seq, N_seq);
     
@@ -1440,8 +1452,7 @@ int main(int argc, char **argv)
 		  na_all[a][i][j], SI_all[a][i][j],CO_all[a][i][j],
 		  TM_all[a][i][j], PC_all[a][i][j]);
 	  if(msa_opt){
-	    float RMSD=
-	      Compute_RMSD(prot_p,rep_str[i],rep_str[j],msa_opt,L_msa_opt);
+	    float RMSD=Compute_RMSD(pi, pj, i, j, msa_opt, L_msa_opt);
 	    fprintf(file_sim, "\t%.3f", RMSD);
 	  }
 	}
@@ -1628,9 +1639,9 @@ int main(int argc, char **argv)
     All_gaps=Allocate_mat2_i(Nd, kgap_max+1);
     TIV_gaps=Allocate_mat2_i(Nd, kgap_max+1);
     for(i=0; i<N_seq; i++){
-      int i1=i_seq[rep_str[i]];
+      int i1=i_inp[rep_str[i]];
       for(j=0; j<i; j++){
-	int j1=i_seq[rep_str[j]];
+	int j1=i_inp[rep_str[j]];
 	N_gaps[i][j]=Count_gaps(Prot_in[i1].seq, Prot_in[j1].seq, N_ali);
 	N_gaps[j][i]=N_gaps[i][j];
       }
@@ -1792,11 +1803,12 @@ void help(char *pname){
 	 " (only necessary file_name)\n"
 	 "\t -pbdir <directory of pdb files>  (default: current directory)\n"
 	 "\t -pbdir2 <2nd directory of pdb files>  (default: none)\n"
-	 "\t -pdbext <extension of pdb files>  (default: .pdb)\n\n"
+	 "\t -pdbext <extension of pdb files>  (default: .pdb)\n"
+	 "\t -chain_num ! Read chains as numbers instead of char\n\n"
 	 "\t -ali <MSA file in FASTA format, with names of PDB files>\n"
 	 "\t -seq <sequences in FASTA format, with names of PDB files>\n"
-	 "\t # The pdb code is optionally followed by the chain index\n"
-	 "\t # Ex: >1opd.pdb A or >1opdA or >1opd_A\n"
+	 "\t # The pdb code is optionally followed by chain index or number\n"
+	 "\t # Ex: >1opd.pdb A or >1opd 1 or >1opdA >1opd_A\n"
 	 "\t -seq_thr <threshold above which sequences are joined>\n"
 	 "\t # For avoiding to join, set -seq_thr 1\n"
 	 "\t -id Print propensities between conservation measures\n"
@@ -1970,6 +1982,7 @@ int Get_pdb_list(struct Prot_input **Prot_input, char *input)
     struct Prot_input *Pn=(*Prot_input)+n;
     strcpy(Pn->code, name);
     Pn->chain=' ';
+    Pn->chain_num=-1;
     Pn->domname[0]='\0';
     Pn->domain[0]='\0';
     Pn->nfrag=1;
@@ -1977,8 +1990,12 @@ int Get_pdb_list(struct Prot_input **Prot_input, char *input)
     Pn->end_frag=NULL;
 
     // get chain
-    if((arg>1)&&(chain[0]!='\0')&&(chain[0]!='\n')){
-      Pn->chain=chain[0];
+    if(CHAIN_NUM==0){
+      if((arg>1)&&(chain[0]!='\0')&&(chain[0]!='\n')){
+	Pn->chain=chain[0];
+      }
+    }else{
+      if(arg>1){sscanf(chain, "%d", &(Pn->chain_num));}
     }
 
     // Read domain
@@ -1986,7 +2003,7 @@ int Get_pdb_list(struct Prot_input **Prot_input, char *input)
     else{sprintf(Pn->domname, "%s%c",Pn->code, Pn->chain);}
     printf("%s", Pn->domname);
 
-    printf(" pdb=%s chain=%c", Pn->code, Pn->chain);
+    printf(" pdb=%s chain=%c %d", Pn->code, Pn->chain, Pn->chain_num);
 
     // What is third column?
     if(arg>=3 && isdom==-2){
@@ -2129,12 +2146,23 @@ int Get_sequences(struct Prot_input **Prot_input, int *Nali, char *file_ali,
 		   (*Prot_input)[n].domname, word1, word2, &d1);
       char *name=(*Prot_input)[n].domname;
       int nc=0; char *ch=word1; while(*ch!='\0'){ch++; nc++;}
+
       // Get chain
-      if(c==1){
-	if(name[4]=='_'){(*Prot_input)[n].chain=name[5];}
-	else{(*Prot_input)[n].chain=name[4];}
-      }else if(nc==1){
-	(*Prot_input)[n].chain=word1[0];
+      if(CHAIN_NUM==0){
+	if(c==1){
+	  if(name[4]=='_'){(*Prot_input)[n].chain=name[5];}
+	  else{(*Prot_input)[n].chain=name[4];}
+	}else if(nc==1){
+	  (*Prot_input)[n].chain=word1[0];
+	}
+      }else{
+	if(c==1){
+	  if(name[4]=='_'){
+	    sscanf(name+5, "%d", &((*Prot_input)[n].chain_num));
+	  }
+	}else{
+	  sscanf(word1, "%d", &((*Prot_input)[n].chain_num));
+	}
       }
 
       // Get domain
@@ -2601,6 +2629,8 @@ void Get_input(char *file_ali, char *file_list, char *file_fun,
       i++; sscanf(argv[i], "%s", file_ali);
       if(ali){printf("WARNING, seq already provided\n");}
       ali=1; INP_MSA=1;
+    }else if(strcmp(argv[i], "-chain_num")==0){
+      CHAIN_NUM=1;
     }else if(strcmp(argv[i], "-pdblist")==0){
       i++; sscanf(argv[i], "%s", file_list);
     }else if(strcmp(argv[i], "-seq")==0){
@@ -3470,21 +3500,20 @@ char **Assign_Seq(char ***name_seq, int *len_seq,
   char **Seq=malloc(N_seq*sizeof(char *));
   for(int i=0; i<N_seq; i++){
     struct Prot_input *proti=Prot_in+i_seq[rep_str[i]];
-    int Li=proti->len, j;
+    (*name_seq)[i]=malloc(200*sizeof(char));
+    //strcpy((*name_seq)[i], proti->domname);
+    sprintf((*name_seq)[i], "%s %c %s",
+	    proti->domname, proti->chain, proti->domain);
+    int Li=proti->len, k=0;
     //printf("Assigning sequence %d L= %d\n", i, Li);
     len_seq[i]=Li;
-    Seq[i]=malloc(Li* sizeof(char)); int k=0;
-    for(j=0; j<N_ali; j++){
+    Seq[i]=malloc(Li* sizeof(char));
+    for(int j=0; j<N_ali; j++){
       if(proti->seq[j]!='-' && k<Li){Seq[i][k]=proti->seq[j]; k++;}
     }
     if(k!=Li){
       printf("ERROR in Assign_seq, L= %d %d\n", Li, k); exit(8);
     }
-    (*name_seq)[i]=malloc(200*sizeof(char));
-    //strcpy((*name_seq)[i], proti->domname);
-    sprintf((*name_seq)[i], "%s %c %s",
-	    proti->domname, proti->chain, proti->domain);
-    
   }
   return(Seq);
 }
@@ -3598,7 +3627,9 @@ void Initialize_prot(struct protein *prot){
   prot->N_cont=0;
   prot->n_sec_el=0;
   prot->chain=' ';
+  prot->chain_num=-1;
   prot->exp_meth=' ';
+  prot->nuc=0;
 }
 
 void Set_type(char **what, int *code, int *ATYPE, char *name, int it){

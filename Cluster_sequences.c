@@ -65,7 +65,7 @@ int Cluster_seqs(int **rep_str, // repr. str. (one per cluster)
       Align_PC_NW_pair(ali_ij, NULL, NULL, prot2, prot1);
       float SI=Sequence_identity(ali_ij, prot2->aseq, prot2->len,
 				 prot1->aseq, prot1->len);
-      if(SI>=seq_thr){ // Join to cluster i
+      if(SI>seq_thr){ // Join to cluster i
 	if(0 && prot1->len > prot2->len){ // Change representative
 	  rep[i]=j;
 	  change_ali[i]=1;

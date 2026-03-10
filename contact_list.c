@@ -1,6 +1,6 @@
-#define CONT_MAX 30000
 int ini_cont=0;
 float C_THR, CONT_THR_2;
+
 
 #include "protein.h"
 #include "cont_list.h"
@@ -33,6 +33,7 @@ int Compute_contact_list(struct protein *prot, char cont_type,
 
   // Auxiliary
   int i_res, j_res, i, contact=0;
+  int CONT_MAX=20*N_res;
   short res1[CONT_MAX], res2[CONT_MAX];
   int *num_cont=malloc(N_res*sizeof(int));
 
@@ -57,7 +58,9 @@ int Compute_contact_list(struct protein *prot, char cont_type,
       }
       if(contact){
 	if(NC>=CONT_MAX){
-	  printf("ERROR, more than %d contacts found\n", NC); exit(8);
+	  printf("ERROR, more than %d contacts found\n", NC);
+	  return(0);
+	  //exit(8);
 	}
 	res1[NC]=i_res; res2[NC]=j_res; NC++;
 	num_cont[i_res]++; 
