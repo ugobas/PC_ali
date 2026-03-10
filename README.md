@@ -1,7 +1,9 @@
 # PC_ali
+
 Multiple sequence and structure aligner PC_ali
-Program PC_ali
+
 Author Ugo Bastolla Centro de Biologia Molecular Severo Ochoa
+
 Email: <ubastolla@cbm.csic.es>
 
 (It includes a modified version of the needlemanwunsch aligner programmed by Dr. Andrew C. R. Martin in the Profit suite of programs, (c) SciTech Software 1993-2007)
@@ -12,9 +14,12 @@ PC_ali takes as input:
 1) either a list of PDB files (option -pdblist, format: column1: pdb code or file name col2: chain col3: domain, ex. 1-222 col4: domain name col5: directory 1 or 2 where the file is stored), or
 2) not aligned sequences (option -seq), or
 3) an MSA (option -ali).
+
 In cases 2 and 3 PDB file names must be specified as sequence names.
 In case 1, the PDB files may be stored in two different folders. Folder 1 is input as -pdbdir, folder 2 is input as -pdbdir2, the folder of each PDB file (1 or 2) is specified in the 3rd column of the pdblist file (optional), default is folder 1. 
 It is not allowed to input both a list of PDB files and an MSA.
+
+Chains can be input either as characters (e.g. "1opd A", default) or as number if the option -chain_num is specified (e.g. "1opd 1", in this case the program reads the 1st chain in the PDB file). If the chain is not specified either as charcter or as number, the program reads the first one.
 
 ## Usage:
 PC_ali  
@@ -22,7 +27,8 @@ PC_ali
 	-pdblist <List of PDB files> Format: 1 file_name 2 chain 3 domain 4 dom_name 5 dir (only file_name is mandatory)
 	-seq <sequences in FASTA format, with names of PDB files>
 	-ali <MSA file in FASTA format, with names of PDB files>
-	# The pdb code is optionally followed by the chain index, e.g. >1opd.pdb A or >1opdA or >1opd_A
+	-chain_num ! Interpret chain as number instead of character
+	# The pdb code is optionally followed by the chain index, e.g. >1opd.pdb A or >1opd 1 or >1opdA or >1opd_A or >1opd_1
 
 	-pbdir <folder of pdb files>  (default: current directory)
  	-pbdir2 <2nd folder of pdb files>  (default: current directory)
@@ -71,7 +77,6 @@ They are printed in <>.prot.div for all pairs of protein sequences, and also for
 7) If the options -print_sim or -print_div are set, the program prints in files <>.prot.sim and <>.prot.div similarity and divergence scores for the input MSA (if present) and for the final MSA.
 8) If -print_pdb is set, the program prints the multiple superimposition obtained by maximizing the TM score
 9) Furthermore, if -print_cv is set, the program computes and prints for all four divergence measures the violations of the molecular clock averaged over all possible outgroups identified with the Neighbor-Joining criterion, and the corresponding significance score.
-
 
 ## COMPILE:
 >unzip PC_ali.zip
