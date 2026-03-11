@@ -32,8 +32,10 @@ int Get_number(char *pdbres);
 char Get_aaname(char *aaname);
 char Code_3_1(char *res);
 void Set_prot_name(char *name, char *filename, char chain);
+int Get_oligomer(char *string);
 int Write_protein(struct protein *prot, struct residue *res, int nres,
-		  char *filename, char chain_to_read, char exp_meth);
+		  char *filename, char chain_to_read,
+		  char exp_meth, int oligomer);
 int Copy_CA(struct atom *atom1, float *xca, int n_atom);
 void Set_CA_vectors(struct protein *prot);
 
@@ -81,6 +83,7 @@ int Read_pdb(char *filename, struct protein **prot,
   for(int i=0; i<MAXRES; i++)res[i].atom=NULL;
   struct secondary sec_ele[SEC_STR_MAX];
   int N_sec_ele=0;
+  int oligomer=0;
 
   int num_chain=0; char chain_old='\0';
   while(fgets(string, sizeof(string), file_in)!=NULL){
@@ -103,7 +106,15 @@ int Read_pdb(char *filename, struct protein **prot,
       break;
     }else if(strncmp(string,"EXPDTA", 6)==0){
       if(strncmp(string+10, "NMR", 3)==0){exp_meth='N';}
-      else{exp_meth='X';}
+      else if(strncmp(string+10, "SOLUTION", 8)==0){exp_meth='N';}
+      else if(strncmp(string+10, "ELECTRON", 8)==0){exp_meth='E';}
+      else if(string[10]=='X'){exp_meth='X';}
+      else{exp_meth=string[10];}
+      continue;
+    }else if(strncmp(string, "REMARK 350", 10)==0){
+      // Largest reported oligomeric state
+      int meric=Get_oligomer(string);
+      if(oligomer==0 || meric>oligomer){oligomer=meric;}
       continue;
     }else if(strncmp(string,"HELIX ", 6)==0){
       Read_sec_str(sec_ele, &N_sec_ele, 'H', string);
@@ -230,7 +241,8 @@ int Read_pdb(char *filename, struct protein **prot,
 	 nres, filename, *chain_to_read);
 
   // Write protein
-  int w=Write_protein(*prot, res, nres, filename, *chain_to_read, exp_meth);
+  int w=Write_protein(*prot, res, nres, filename, *chain_to_read, exp_meth,
+		      oligomer);
   if(w<0){return(0);}
   Secondary_structure((*prot)->ss3, (*prot)->len, *chain_to_read, //nres
 		      (*prot)->pdbres, sec_ele, N_sec_ele);
@@ -244,7 +256,8 @@ int Read_pdb(char *filename, struct protein **prot,
 }
 
 int Write_protein(struct protein *prot, struct residue *res, int nres,
-		  char *filename, char chain_to_read, char exp_meth)
+		  char *filename, char chain_to_read, char exp_meth,
+		  int oligomer)
 {
   struct atom *atom1, *atom2; 
   int i, j, ires=0, natoms=0;
@@ -253,6 +266,7 @@ int Write_protein(struct protein *prot, struct residue *res, int nres,
 
   //Set_prot_name(prot->code, filename, chain_to_read);
   prot->exp_meth=exp_meth;
+  prot->oligomer=oligomer;
   prot->nuc=0; // It is protein
   //prot->ss=malloc(nres*sizeof(char));
   prot->ss3= malloc(nres*sizeof(short));
@@ -811,7 +825,76 @@ void Empty_prot(struct protein *prot)
   if(prot->xca_rot){free(prot->xca_rot);} prot->xca_rot=NULL;
   prot->nuc=0;
   prot->exp_meth=' ';
+  prot->oligomer=0;
   prot->natoms=0;
   prot->nca=0;
   prot->len=0;
 }
+
+void Initialize_prot(struct protein *prot){
+  prot->aseq=NULL;
+  prot->seq1=NULL;
+  prot->seq_bs=NULL;
+  prot->ss3=NULL;
+  prot->n_atom=NULL;
+  prot->xca_rot=NULL;
+  prot->pdbres=NULL;
+  prot->seqres=NULL;
+  prot->vec=NULL;
+  prot->res_atom=NULL;
+  //prot->seq2=NULL;
+  prot->ss_num=NULL;
+  prot->Cont_map=NULL;
+  prot->ncont=NULL;
+  prot->EC=NULL;
+  prot->sec_el=NULL;
+  sprintf(prot->name_file, "");
+  sprintf(prot->code, "");
+  prot->len=0;
+  prot->nca=0;
+  prot->N_cont=0;
+  prot->n_sec_el=0;
+  prot->chain=' ';
+  prot->exp_meth=' ';
+  prot->oligomer=0;
+}
+
+int Get_oligomer(char *string){
+   //REMARK 350 AUTHOR DETERMINED BIOLOGICAL UNIT: MONOMERIC
+   //REMARK 350 SOFTWARE DETERMINED QUATERNARY STRUCTURE: DIMERIC
+   char meric[80], s1[20], s2[20], s3[20], s4[20], s5[20], s6[20];
+   int m=sscanf(string, "%s%s%s%s%s%s%s", s1, s2, s3, s4, s5, s6, meric);
+   if(m<7){return(0);}
+   for(int i=2; i<=5; i++){
+     if(strncmp(meric+i, "MERIC", 5)==0){goto read;}
+   }
+   char *s=string, *start;
+   while(*s!='\0'){
+     if(*s==' '){
+       start=s+1;
+     }else if(strncmp(s, "MERIC", 5)==0){
+       sscanf(start, "%s", meric);
+       goto read;
+     }
+     s++;
+   }
+   return(0);
+ read:
+   //printf("string: %s", string);
+   //printf("oligomerization state: %s\n", meric);
+   if(strncmp(meric, "MONO",4)==0){return(1);}
+   else if(strncmp(meric, "DI",2)==0){return(2);}
+   else if(strncmp(meric, "TRI", 3)==0){return(3);}
+   else if(strncmp(meric, "TETRA", 5)==0){return(4);}
+   else if(strncmp(meric, "PENTA", 5)==0){return(5);}
+   else if(strncmp(meric, "HEXA", 4)==0){return(6);}
+   else if(strncmp(meric, "EPTA", 4)==0){return(7);}
+   else if(strncmp(meric, "OCTA", 4)==0){return(8);}
+   else if(strncmp(meric, "NONA", 4)==0){return(9);}
+   else if(strncmp(meric, "DECA", 4)==0){return(10);}
+   else{
+     char word[40]; strcpy(word, meric); word[2]=' ';
+     int mer; sscanf(word, "%d", &mer);
+     return(mer);
+   }
+ }

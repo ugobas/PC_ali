@@ -19,6 +19,8 @@ struct protein{
   int nca;
   int natoms;
   int nuc; // 0 if protein, 1 if DNA, -1 if RNA
+  char exp_meth; // NMR (N), X-ray (X), model (M), cryo-EM (E)
+  int oligomer;
   char name_file[20];
   char code[30];
   char domname[40];
@@ -38,7 +40,6 @@ struct protein{
   float *xca_rot; // alpha carbon coordinates in optimal superimposition
   float **vec;
   struct atom **res_atom;
-  char exp_meth;
   //
   int N_cont, n_sec_el;
   //char  *seq2;

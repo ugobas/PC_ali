@@ -9,3 +9,4 @@ int Read_pdb(char *filename, struct protein **prot,
 int Select_domain(struct protein *prot, 
 		  int *ini_frag, int *end_frag, int nfrag);
 void Empty_prot(struct protein *prot);
+void Initialize_prot(struct protein *prot);

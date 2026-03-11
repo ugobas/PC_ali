@@ -3603,35 +3603,6 @@ int *Representative_structure(int *N_conf, int **conformation, int n,
   return(rep_str);
 }
 
-void Initialize_prot(struct protein *prot){
-  prot->aseq=NULL;
-  prot->seq1=NULL;
-  prot->seq_bs=NULL;
-  prot->ss3=NULL;
-  prot->n_atom=NULL;
-  prot->xca_rot=NULL;
-  prot->pdbres=NULL;
-  prot->seqres=NULL;
-  prot->vec=NULL;
-  prot->res_atom=NULL;
-  //prot->seq2=NULL;
-  prot->ss_num=NULL;
-  prot->Cont_map=NULL;
-  prot->ncont=NULL;
-  prot->EC=NULL;
-  prot->sec_el=NULL;
-  sprintf(prot->name_file, "");
-  sprintf(prot->code, "");
-  prot->len=0;
-  prot->nca=0;
-  prot->N_cont=0;
-  prot->n_sec_el=0;
-  prot->chain=' ';
-  prot->chain_num=-1;
-  prot->exp_meth=' ';
-  prot->nuc=0;
-}
-
 void Set_type(char **what, int *code, int *ATYPE, char *name, int it){
   what[*ATYPE]=malloc(10*sizeof(char));
   strcpy(what[*ATYPE], name);
